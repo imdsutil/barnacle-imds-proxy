@@ -1,0 +1,60 @@
+services:
+  # This reads settings from the extension UI and
+  # has the code that listens to docker events and
+  # manages containers.
+  imds-proxy-controller:
+    image: ${DESKTOP_PLUGIN_IMAGE}
+    container_name: imds-proxy-controller
+    network_mode: none
+    volumes:
+    # So we can have access to the host docker daemon:
+    - /var/run/docker.sock:/var/run/docker.sock
+    # To store persistent configuration:
+    - imds-proxy-config:/data:rw
+    # To communicate with the imds-proxy service:
+    - imds-proxy-sockets:/var/run/imds-proxy:rw
+
+  # Proxies IMDS requests from containers to the
+  # extension's configured backend.
+  imds-proxy:
+    container_name: imds-proxy
+    image: imds-dev-proxy-proxy:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      # Connects to the AWS/GCP dual-stack network
+      imds_aws_gcp:
+        ipv4_address: 169.254.169.254
+        ipv6_address: "fd00:ec2::254"
+      # Connects to the OpenStack IPv6-only network
+      imds_openstack:
+        ipv6_address: "fd00:a9fe:a9fe::254"
+    volumes:
+      # So we can communicate with the controller
+      - imds-proxy-sockets:/var/run/imds-proxy:rw
+    # Try restarting up to 10 times on failure
+    restart: on-failure:10
+
+volumes:
+  imds-proxy-config:
+  imds-proxy-sockets:
+
+networks:
+  # Network 1: Handles IPv4 IMDS and standard EC2/GCP IPv6 IMDS ranges
+  imds_aws_gcp:
+    name: ".imds_aws_gcp"
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 169.254.169.0/24
+        - subnet: "fd00:ec2::/64"
+
+  # Network 2: Dedicated to the OpenStack IPv6 metadata range
+  imds_openstack:
+    name: ".imds_openstack"
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: "fd00:a9fe:a9fe::/64"

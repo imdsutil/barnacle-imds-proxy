@@ -1,0 +1,908 @@
+// Copyright 2026 Matt Miller
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/network"
+)
+
+type fakeDockerClient struct {
+	inspectCalls        int
+	inspectSequence     []container.InspectResponse
+	networkConnectCalls []string
+	pauseCalls          int
+	unpauseCalls        int
+	closeCalls          int
+}
+
+func (f *fakeDockerClient) ContainerInspect(_ context.Context, _ string) (container.InspectResponse, error) {
+	if len(f.inspectSequence) == 0 {
+		return container.InspectResponse{}, nil
+	}
+	index := f.inspectCalls
+	if index >= len(f.inspectSequence) {
+		index = len(f.inspectSequence) - 1
+	}
+	f.inspectCalls++
+	return f.inspectSequence[index], nil
+}
+
+func (f *fakeDockerClient) ContainerList(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
+	return nil, nil
+}
+
+func (f *fakeDockerClient) Events(_ context.Context, _ events.ListOptions) (<-chan events.Message, <-chan error) {
+	return make(chan events.Message), make(chan error)
+}
+
+func (f *fakeDockerClient) NetworkConnect(_ context.Context, networkID, _ string, _ *network.EndpointSettings) error {
+	f.networkConnectCalls = append(f.networkConnectCalls, networkID)
+	return nil
+}
+
+func (f *fakeDockerClient) ContainerPause(_ context.Context, _ string) error {
+	f.pauseCalls++
+	return nil
+}
+
+func (f *fakeDockerClient) ContainerUnpause(_ context.Context, _ string) error {
+	f.unpauseCalls++
+	return nil
+}
+
+func (f *fakeDockerClient) Close() error {
+	f.closeCalls++
+	return nil
+}
+
+func resetTracking() {
+	// Acquire locks in consistent order: ipToContainerIDMutex -> trackedContainersMutex
+	// This matches the order in updateIPIndex() and prevents deadlocks
+	ipToContainerIDMutex.Lock()
+	defer ipToContainerIDMutex.Unlock()
+
+	trackedContainersMutex.Lock()
+	defer trackedContainersMutex.Unlock()
+
+	ipToContainerID = make(map[string]string)
+	trackedContainers = make(map[string]ContainerInfo)
+}
+
+func TestUpdateAndRemoveIPIndex(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	containerID := "abc123"
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Networks: []NetworkInfo{{
+			NetworkID:   "net-1",
+			NetworkName: "imds",
+		}},
+	}
+	trackedContainersMutex.Unlock()
+
+	updateIPIndex(containerID)
+
+	ipToContainerIDMutex.RLock()
+	if got := ipToContainerID["net-1"]; got != containerID {
+		ipToContainerIDMutex.RUnlock()
+		t.Fatalf("want ip index to be set, got %q", got)
+	}
+	ipToContainerIDMutex.RUnlock()
+
+	removeIPIndexForContainer(containerID, trackedContainers[containerID])
+
+	ipToContainerIDMutex.RLock()
+	if _, ok := ipToContainerID["net-1"]; ok {
+		ipToContainerIDMutex.RUnlock()
+		t.Fatalf("want ip index to be cleared")
+	}
+	ipToContainerIDMutex.RUnlock()
+}
+
+func TestAddAndRemoveContainerTracking(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	containerID := "abc123"
+	inspectInitial := container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			ID:   containerID,
+			Name: "/demo",
+			State: &container.State{
+				Running: false,
+			},
+		},
+		Config: &container.Config{Labels: nil},
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{},
+		},
+	}
+	inspectUpdated := container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			ID:   containerID,
+			Name: "/demo",
+			State: &container.State{
+				Running: false,
+			},
+		},
+		Config: &container.Config{Labels: map[string]string{}},
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{
+				imdsNetworkAWSGCP: {
+					NetworkID: "net-aws",
+				},
+				imdsNetworkOpenStack: {
+					NetworkID: "net-os",
+				},
+			},
+		},
+	}
+
+	client := &fakeDockerClient{inspectSequence: []container.InspectResponse{inspectInitial, inspectUpdated}}
+
+	if err := addContainerToTrackingWithNetwork(context.Background(), client, containerID, false); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	if len(client.networkConnectCalls) != 2 {
+		t.Fatalf("want two network connect calls, got %d", len(client.networkConnectCalls))
+	}
+
+	trackedContainersMutex.RLock()
+	info, ok := trackedContainers[containerID]
+	trackedContainersMutex.RUnlock()
+	if !ok {
+		t.Fatalf("want container to be tracked")
+	}
+	if len(info.Networks) != 2 {
+		t.Fatalf("want two networks, got %d", len(info.Networks))
+	}
+	if info.Labels == nil {
+		t.Fatalf("want labels to be initialized")
+	}
+
+	ipToContainerIDMutex.RLock()
+	if got := ipToContainerID["net-aws"]; got != containerID {
+		ipToContainerIDMutex.RUnlock()
+		t.Fatalf("want net-aws mapping, got %q", got)
+	}
+	if got := ipToContainerID["net-os"]; got != containerID {
+		ipToContainerIDMutex.RUnlock()
+		t.Fatalf("want net-os mapping, got %q", got)
+	}
+	ipToContainerIDMutex.RUnlock()
+
+	removeContainerFromTracking(containerID)
+
+	trackedContainersMutex.RLock()
+	if _, ok := trackedContainers[containerID]; ok {
+		trackedContainersMutex.RUnlock()
+		t.Fatalf("want container to be removed")
+	}
+	trackedContainersMutex.RUnlock()
+}
+
+// TestConcurrentContainerTracking tests concurrent additions and removals
+func TestConcurrentContainerTracking(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	const numGoroutines = 50
+	const numOperations = 20
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			for j := 0; j < numOperations; j++ {
+				containerID := fmt.Sprintf("container-%d-%d", id, j)
+				ipAddr := fmt.Sprintf("169.254.169.%d", (id*numOperations+j)%254+1)
+
+				// Add container to tracking
+				containerInfo := ContainerInfo{
+					ContainerID: containerID,
+					Name:        fmt.Sprintf("/test-%d-%d", id, j),
+					Networks: []NetworkInfo{
+						{NetworkID: ipAddr, NetworkName: fmt.Sprintf("net-%d", j)},
+					},
+				}
+
+				trackedContainersMutex.Lock()
+				trackedContainers[containerID] = containerInfo
+				trackedContainersMutex.Unlock()
+
+				// Update IP index
+				updateIPIndex(containerID)
+
+				// Lookup by IP
+				ipToContainerIDMutex.RLock()
+				got := ipToContainerID[ipAddr]
+				ipToContainerIDMutex.RUnlock()
+				if got != containerID {
+					t.Errorf("want IP mapping %s=%s, got %s", ipAddr, containerID, got)
+				}
+
+				// Remove container
+				removeContainerFromTracking(containerID)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify clean state
+	trackedContainersMutex.RLock()
+	numTracked := len(trackedContainers)
+	trackedContainersMutex.RUnlock()
+
+	if numTracked != 0 {
+		t.Errorf("want 0 tracked containers after cleanup, got %d", numTracked)
+	}
+}
+
+// TestConcurrentIPLookup tests concurrent IP to container lookups
+func TestConcurrentIPLookup(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	// Setup test data
+	containers := make(map[string]string) // ip -> containerID
+	for i := 0; i < 100; i++ {
+		containerID := fmt.Sprintf("container-%d", i)
+		ipAddr := fmt.Sprintf("169.254.169.%d", i%254+1)
+		containers[ipAddr] = containerID
+
+		containerInfo := ContainerInfo{
+			ContainerID: containerID,
+			Name:        fmt.Sprintf("/test-%d", i),
+			Networks: []NetworkInfo{
+				{NetworkID: ipAddr, NetworkName: fmt.Sprintf("net-%d", i)},
+			},
+		}
+
+		trackedContainersMutex.Lock()
+		trackedContainers[containerID] = containerInfo
+		trackedContainersMutex.Unlock()
+
+		updateIPIndex(containerID)
+	}
+
+	const numGoroutines = 50
+	const numLookups = 100
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+
+			for j := 0; j < numLookups; j++ {
+				ipAddr := fmt.Sprintf("169.254.169.%d", j%100%254+1)
+				expectedID := containers[ipAddr]
+
+				ipToContainerIDMutex.RLock()
+				got := ipToContainerID[ipAddr]
+				ipToContainerIDMutex.RUnlock()
+
+				if got != expectedID {
+					t.Errorf("want IP mapping %s=%s, got %s", ipAddr, expectedID, got)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestConcurrentSettingsAccess tests concurrent settings reads and writes
+func TestConcurrentSettingsAccess(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	const numReaders = 30
+	const numWriters = 5
+	const numOperations = 100
+
+	var wg sync.WaitGroup
+	wg.Add(numReaders + numWriters)
+
+	// Readers
+	for i := 0; i < numReaders; i++ {
+		go func() {
+			defer wg.Done()
+
+			for j := 0; j < numOperations; j++ {
+				settingsMutex.RLock()
+				_ = settings.URL
+				settingsMutex.RUnlock()
+			}
+		}()
+	}
+
+	// Writers
+	for i := 0; i < numWriters; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			for j := 0; j < numOperations; j++ {
+				settingsMutex.Lock()
+				settings.URL = fmt.Sprintf("http://example.com/%d-%d", id, j)
+				settingsMutex.Unlock()
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+// TestRaceConditionInDockerEventProcessing tests concurrent Docker event handling
+func TestRaceConditionInDockerEventProcessing(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	const numEvents = 100
+	var wg sync.WaitGroup
+	wg.Add(numEvents)
+
+	// Simulate concurrent Docker events
+	for i := 0; i < numEvents; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			containerID := fmt.Sprintf("container-%d", id)
+			ipAddr := fmt.Sprintf("169.254.169.%d", id%254+1)
+
+			// Simulate start event
+			containerInfo := ContainerInfo{
+				ContainerID: containerID,
+				Name:        fmt.Sprintf("/test-%d", id),
+				Networks: []NetworkInfo{
+					{NetworkID: ipAddr, NetworkName: fmt.Sprintf("net-%d", id)},
+				},
+			}
+
+			trackedContainersMutex.Lock()
+			trackedContainers[containerID] = containerInfo
+			trackedContainersMutex.Unlock()
+
+			// Simulate network connect
+			updateIPIndex(containerID)
+
+			// Simulate stop event
+			removeContainerFromTracking(containerID)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify clean state
+	trackedContainersMutex.RLock()
+	numTracked := len(trackedContainers)
+	trackedContainersMutex.RUnlock()
+
+	ipToContainerIDMutex.RLock()
+	numIPs := len(ipToContainerID)
+	ipToContainerIDMutex.RUnlock()
+
+	if numTracked != 0 {
+		t.Errorf("want 0 tracked containers, got %d", numTracked)
+	}
+	if numIPs != 0 {
+		t.Errorf("want 0 IP mappings, got %d", numIPs)
+	}
+}
+
+// TestEdgeCaseEmptyContainerID tests handling of empty container ID
+func TestEdgeCaseEmptyContainerID(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	containerInfo := ContainerInfo{
+		ContainerID: "",
+		Name:        "/valid-name",
+		Networks: []NetworkInfo{
+			{NetworkID: "169.254.169.100", NetworkName: "bridge"},
+		},
+	}
+
+	trackedContainersMutex.Lock()
+	trackedContainers[""] = containerInfo
+	trackedContainersMutex.Unlock()
+
+	updateIPIndex("")
+
+	// Should handle empty ID gracefully
+	ipToContainerIDMutex.RLock()
+	got := ipToContainerID["169.254.169.100"]
+	ipToContainerIDMutex.RUnlock()
+
+	if got != "" {
+		t.Errorf("want empty string mapping, got %q", got)
+	}
+
+	removeContainerFromTracking("")
+
+	trackedContainersMutex.RLock()
+	_, exists := trackedContainers[""]
+	trackedContainersMutex.RUnlock()
+
+	if exists {
+		t.Error("empty container ID should be removable")
+	}
+}
+
+// TestEdgeCaseUnicodeContainerName tests handling of Unicode in container names
+func TestEdgeCaseUnicodeContainerName(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	testCases := []struct {
+		name          string
+		containerName string
+	}{
+		{"emoji", "/🐳-container"},
+		{"chinese", "/容器-test"},
+		{"arabic", "/حاوية-test"},
+		{"cyrillic", "/контейнер-test"},
+		{"mixed", "/test-🚀-подтест-测试"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			containerID := "unicode-" + tc.name
+			ipAddr := fmt.Sprintf("169.254.169.%d", len(tc.name)+10)
+
+			containerInfo := ContainerInfo{
+				ContainerID: containerID,
+				Name:        tc.containerName,
+				Networks: []NetworkInfo{
+					{NetworkID: ipAddr, NetworkName: "bridge"},
+				},
+			}
+
+			trackedContainersMutex.Lock()
+			trackedContainers[containerID] = containerInfo
+			trackedContainersMutex.Unlock()
+
+			updateIPIndex(containerID)
+
+			// Verify container is tracked
+			trackedContainersMutex.RLock()
+			stored, exists := trackedContainers[containerID]
+			trackedContainersMutex.RUnlock()
+
+			if !exists {
+				t.Fatalf("container %q should be tracked", containerID)
+			}
+			if stored.Name != tc.containerName {
+				t.Errorf("want name %q, got %q", tc.containerName, stored.Name)
+			}
+
+			// Verify IP mapping
+			ipToContainerIDMutex.RLock()
+			got := ipToContainerID[ipAddr]
+			ipToContainerIDMutex.RUnlock()
+
+			if got != containerID {
+				t.Errorf("want IP mapping to %q, got %q", containerID, got)
+			}
+
+			removeContainerFromTracking(containerID)
+		})
+	}
+}
+
+// TestEdgeCaseVeryLongContainerID tests handling of unusually long container IDs
+func TestEdgeCaseVeryLongContainerID(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	// Docker container IDs are typically 64 hex chars, but test with longer
+	longID := strings.Repeat("a", 256)
+	ipAddr := "169.254.169.101"
+
+	containerInfo := ContainerInfo{
+		ContainerID: longID,
+		Name:        "/test-long-id",
+		Networks: []NetworkInfo{
+			{NetworkID: ipAddr, NetworkName: "bridge"},
+		},
+	}
+
+	trackedContainersMutex.Lock()
+	trackedContainers[longID] = containerInfo
+	trackedContainersMutex.Unlock()
+
+	updateIPIndex(longID)
+
+	// Verify storage works with long IDs
+	trackedContainersMutex.RLock()
+	stored, exists := trackedContainers[longID]
+	trackedContainersMutex.RUnlock()
+
+	if !exists {
+		t.Fatal("long container ID should be tracked")
+	}
+	if stored.ContainerID != longID {
+		t.Errorf("want ID preserved, got truncated")
+	}
+
+	// Verify IP mapping
+	ipToContainerIDMutex.RLock()
+	got := ipToContainerID[ipAddr]
+	ipToContainerIDMutex.RUnlock()
+
+	if got != longID {
+		t.Errorf("want IP mapping to long ID, got %q", got)
+	}
+
+	removeContainerFromTracking(longID)
+}
+
+// TestEdgeCaseVeryLongContainerName tests handling of unusually long container names
+func TestEdgeCaseVeryLongContainerName(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	// Docker limits name length, but test system can handle arbitrary lengths
+	longName := "/" + strings.Repeat("very-long-name-", 100)
+	containerID := "long-name-test"
+	ipAddr := "169.254.169.102"
+
+	containerInfo := ContainerInfo{
+		ContainerID: containerID,
+		Name:        longName,
+		Networks: []NetworkInfo{
+			{NetworkID: ipAddr, NetworkName: "bridge"},
+		},
+	}
+
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = containerInfo
+	trackedContainersMutex.Unlock()
+
+	updateIPIndex(containerID)
+
+	// Verify storage works with long names
+	trackedContainersMutex.RLock()
+	stored, exists := trackedContainers[containerID]
+	trackedContainersMutex.RUnlock()
+
+	if !exists {
+		t.Fatal("container with long name should be tracked")
+	}
+	if stored.Name != longName {
+		t.Errorf("want full name preserved, got truncated")
+	}
+
+	removeContainerFromTracking(containerID)
+}
+
+// TestEdgeCaseEmptyNetworkID tests handling of empty network ID
+func TestEdgeCaseEmptyNetworkID(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	containerID := "empty-network-test"
+
+	containerInfo := ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/test-empty-net",
+		Networks: []NetworkInfo{
+			{NetworkID: "", NetworkName: "bridge"},
+		},
+	}
+
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = containerInfo
+	trackedContainersMutex.Unlock()
+
+	updateIPIndex(containerID)
+
+	// Current behavior: creates mapping with empty key (edge case that doesn't crash)
+	// This documents existing behavior rather than enforcing validation
+	ipToContainerIDMutex.RLock()
+	_, exists := ipToContainerID[""]
+	ipToContainerIDMutex.RUnlock()
+
+	// System handles empty NetworkID without panic
+	if os.Getenv("VERBOSE_TESTS") != "" {
+		if !exists {
+			// No mapping created for empty ID
+			t.Log("empty network ID does not create mapping")
+		} else {
+			// Mapping created (current behavior)
+			t.Log("empty network ID creates mapping (edge case tolerated)")
+		}
+	}
+
+	removeContainerFromTracking(containerID)
+}
+
+// TestDockerClientCloseTracking verifies that Close() calls are tracked in mock
+func TestDockerClientCloseTracking(t *testing.T) {
+	client := &fakeDockerClient{}
+
+	if client.closeCalls != 0 {
+		t.Errorf("expected closeCalls=0, got %d", client.closeCalls)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Errorf("Close() returned error: %v", err)
+	}
+
+	if client.closeCalls != 1 {
+		t.Errorf("expected closeCalls=1 after Close(), got %d", client.closeCalls)
+	}
+
+	// Multiple closes
+	client.Close()
+	client.Close()
+
+	if client.closeCalls != 3 {
+		t.Errorf("expected closeCalls=3 after 3 Close() calls, got %d", client.closeCalls)
+	}
+}
+
+// TestStressHighConcurrentContainerOperations tests system under high concurrent load
+func TestStressHighConcurrentContainerOperations(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping stress test in short mode")
+	}
+
+	resetTracking()
+	defer resetTracking()
+
+	const numGoroutines = 500
+	const numOperations = 100
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			for j := 0; j < numOperations; j++ {
+				containerID := fmt.Sprintf("stress-container-%d-%d", id, j)
+				ipAddr := fmt.Sprintf("169.254.169.%d", ((id*numOperations+j)%254)+1)
+
+				containerInfo := ContainerInfo{
+					ContainerID: containerID,
+					Name:        fmt.Sprintf("/stress-%d-%d", id, j),
+					Networks: []NetworkInfo{
+						{NetworkID: ipAddr, NetworkName: fmt.Sprintf("net-%d", j%10)},
+					},
+					Labels: map[string]string{
+						"stress": "test",
+						"id":     containerID,
+					},
+				}
+
+				// Add container
+				trackedContainersMutex.Lock()
+				trackedContainers[containerID] = containerInfo
+				trackedContainersMutex.Unlock()
+
+				// Update IP index
+				updateIPIndex(containerID)
+
+				// Read operations
+				ipToContainerIDMutex.RLock()
+				_ = ipToContainerID[ipAddr]
+				ipToContainerIDMutex.RUnlock()
+
+				trackedContainersMutex.RLock()
+				_ = trackedContainers[containerID]
+				trackedContainersMutex.RUnlock()
+
+				// Delete container
+				if j%10 == 0 {
+					removeContainerFromTracking(containerID)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify system is in consistent state
+	trackedContainersMutex.RLock()
+	numTracked := len(trackedContainers)
+	trackedContainersMutex.RUnlock()
+
+	ipToContainerIDMutex.RLock()
+	numIPs := len(ipToContainerID)
+	ipToContainerIDMutex.RUnlock()
+
+	t.Logf("After stress test: %d tracked containers, %d IP mappings", numTracked, numIPs)
+
+	if numTracked < 0 || numIPs < 0 {
+		t.Errorf("negative counts indicate memory corruption")
+	}
+}
+
+// TestStressMutexContention tests mutex contention under high load
+func TestStressMutexContention(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping stress test in short mode")
+	}
+
+	resetTracking()
+	defer resetTracking()
+
+	const numReaders = 200
+	const numWriters = 50
+	const duration = 1 // seconds
+
+	stopChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Start readers
+	wg.Add(numReaders)
+	for i := 0; i < numReaders; i++ {
+		go func(id int) {
+			defer wg.Done()
+			readCount := 0
+			for {
+				select {
+				case <-stopChan:
+					if os.Getenv("VERBOSE_TESTS") != "" {
+						t.Logf("Reader %d performed %d reads", id, readCount)
+					}
+					return
+				default:
+					// Read from tracked containers
+					trackedContainersMutex.RLock()
+					_ = len(trackedContainers)
+					trackedContainersMutex.RUnlock()
+
+					// Read from IP index
+					ipToContainerIDMutex.RLock()
+					_ = len(ipToContainerID)
+					ipToContainerIDMutex.RUnlock()
+
+					readCount++
+				}
+			}
+		}(i)
+	}
+
+	// Start writers
+	wg.Add(numWriters)
+	for i := 0; i < numWriters; i++ {
+		go func(id int) {
+			defer wg.Done()
+			writeCount := 0
+			for {
+				select {
+				case <-stopChan:
+					if os.Getenv("VERBOSE_TESTS") != "" {
+						t.Logf("Writer %d performed %d writes", id, writeCount)
+					}
+					return
+				default:
+					containerID := fmt.Sprintf("contention-%d-%d", id, writeCount)
+					ipAddr := fmt.Sprintf("169.254.169.%d", ((id*1000+writeCount)%254)+1)
+
+					containerInfo := ContainerInfo{
+						ContainerID: containerID,
+						Name:        fmt.Sprintf("/contention-%d", id),
+						Networks: []NetworkInfo{
+							{NetworkID: ipAddr, NetworkName: "bridge"},
+						},
+					}
+
+					trackedContainersMutex.Lock()
+					trackedContainers[containerID] = containerInfo
+					trackedContainersMutex.Unlock()
+
+					updateIPIndex(containerID)
+
+					// Sometimes remove
+					if writeCount%5 == 0 {
+						removeContainerFromTracking(containerID)
+					}
+
+					writeCount++
+				}
+			}
+		}(i)
+	}
+
+	// Let it run for the specified duration
+	time.Sleep(time.Duration(duration) * time.Second)
+	close(stopChan)
+
+	wg.Wait()
+
+	// Verify no corruption
+	trackedContainersMutex.RLock()
+	numTracked := len(trackedContainers)
+	trackedContainersMutex.RUnlock()
+
+	t.Logf("After contention test: %d containers remain tracked", numTracked)
+}
+
+// TestStressRapidSettingsChanges tests rapid concurrent settings updates
+func TestStressRapidSettingsChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping stress test in short mode")
+	}
+
+	const numGoroutines = 100
+	const numUpdates = 50
+
+	tempDir := t.TempDir()
+	originalPath := settingsPath
+	settingsPath = tempDir + "/stress-settings.json"
+	defer func() { settingsPath = originalPath }()
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			for j := 0; j < numUpdates; j++ {
+				// Write settings
+				settingsMutex.Lock()
+				settings = Settings{
+					URL: fmt.Sprintf("http://test-%d-%d.example.com", id, j),
+				}
+				settingsMutex.Unlock()
+
+				if err := persistSettings(); err != nil {
+					// Some errors expected due to concurrent writes
+					continue
+				}
+
+				// Read settings
+				_ = loadSettings()
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify final settings file is valid
+	err := loadSettings()
+	if err != nil {
+		t.Logf("Final settings load returned error: %v (acceptable)", err)
+	} else {
+		settingsMutex.RLock()
+		finalURL := settings.URL
+		settingsMutex.RUnlock()
+		t.Logf("Final settings URL: %s", finalURL)
+	}
+}

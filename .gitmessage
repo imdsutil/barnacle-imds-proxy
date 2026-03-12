@@ -1,0 +1,27 @@
+# Conventional Commit Message Format
+# <type>: <subject>
+#
+# [optional body]
+#
+# [optional footer(s)]
+
+# Types:
+#   feat:     New feature
+#   fix:      Bug fix
+#   docs:     Documentation changes
+#   style:    Code style changes (formatting, no logic change)
+#   refactor: Code refactoring (no feature/bug change)
+#   test:     Adding or updating tests
+#   chore:    Maintenance tasks
+#   perf:     Performance improvements
+#   build:    Build system or dependency changes
+#   ci:       CI/CD pipeline changes
+
+# Guidelines:
+# - Keep subject line under 120 characters
+# - Use imperative mood ("add" not "added" or "adds")
+# - Don't capitalize first letter of subject
+# - No period at end of subject line
+# - Separate subject from body with blank line
+# - Include GitHub/GitLab issue references when applicable (e.g., "fixes #123")
+# - Body should explain "why" not just "what"

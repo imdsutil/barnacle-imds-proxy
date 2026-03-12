@@ -1,0 +1,11 @@
+node_modules
+ui/build
+ui/coverage
+
+# Go test coverage files
+coverage.out
+*.coverprofile
+backend/coverage.out
+proxy/coverage.out
+
+temp/

@@ -1,0 +1,24 @@
+{
+  "packages": {
+    "ui": {
+      "release-type": "node",
+      "component": "extension-frontend"
+    },
+    "proxy": {
+      "release-type": "maven",
+      "component": "extension-proxy"
+    },
+    "backend": {
+      "release-type": "maven",
+      "component": "extension-backend"
+    },
+    ".": {
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false
+    }
+  },
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
+}

@@ -1,0 +1,5 @@
+# CODEOWNERS file for barnacle-imds-proxy
+# GitHub automatically requests reviews from these owners for PRs touching these paths
+
+# Default for anything not explicitly listed
+* @millermatt
