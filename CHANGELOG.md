@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.2.0...v0.2.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* pin release-please-action version ([7f3af5a](https://github.com/imds-tools/barnacle-imds-proxy/commit/7f3af5a423bb96bc53833e05dd6cba84216c430a))
+* pin release-please-action version ([c72d20b](https://github.com/imds-tools/barnacle-imds-proxy/commit/c72d20b1bce194f9c27596b165a4a250829a92ea))
+
 ## [0.2.0](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.1.1...v0.2.0) (2026-03-12)
 
 
