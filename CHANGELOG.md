@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.2.1...v0.2.2) (2026-03-12)
+
+
+### Bug Fixes
+
+* update permissions and use correct token for GHCR login ([12eccd0](https://github.com/imds-tools/barnacle-imds-proxy/commit/12eccd0498dc9e12aca9e7eb2979a94986ad5c04))
+* update permissions and use correct token for GHCR login ([5de7f3d](https://github.com/imds-tools/barnacle-imds-proxy/commit/5de7f3dd180bd3c100fc9f5387df41b952bb9d8c))
+
 ## [0.2.1](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.2.0...v0.2.1) (2026-03-12)
 
 
