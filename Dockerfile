@@ -37,7 +37,7 @@ LABEL org.opencontainers.image.title="Barnacle IMDS Proxy" \
     com.docker.extension.publisher-url="https://github.com/millermatt" \
     com.docker.extension.additional-urls='[{"title":"Documentation","url":"https://github.com/imds-tools/barnacle-imds-proxy"}, {"title":"Terms of Service","url":"https://github.com/imds-tools/barnacle-imds-proxy/blob/main/LICENSE"}]' \
     com.docker.extension.categories="networking,testing-tools" \
-    com.docker.extension.changelog=""
+    com.docker.extension.changelog="https://raw.githubusercontent.com/imds-tools/barnacle-imds-proxy/refs/heads/main/CHANGELOG.md"
 
 COPY --from=builder /backend/bin/service /
 COPY docker-compose.yaml .
