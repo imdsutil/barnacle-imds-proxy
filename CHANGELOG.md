@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.2.2...v0.2.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* update changelog URL in Dockerfile ([4cddf7c](https://github.com/imds-tools/barnacle-imds-proxy/commit/4cddf7c0435cb333a6c2bc5a638753acb5341165))
+* update changelog URL in Dockerfile ([efa76b8](https://github.com/imds-tools/barnacle-imds-proxy/commit/efa76b8d9c14e9eb7fef4313ec4a590b7b43df18))
+
 ## [0.2.2](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.2.1...v0.2.2) (2026-03-12)
 
 
