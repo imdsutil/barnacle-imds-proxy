@@ -35,7 +35,7 @@ export const SNACKBAR_AUTO_HIDE_DURATION_MS = 6000;
 /**
  * GitHub repository URL for documentation
  */
-export const GITHUB_REPO_URL = 'https://github.com/imds-tools/barnacle-imds-proxy';
+export const GITHUB_REPO_URL = 'https://github.com/imdsutil/barnacle-imds-proxy';
 
 /**
  * Container label that enables IMDS proxying

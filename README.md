@@ -13,7 +13,7 @@ Supports the standard IMDS address ranges for AWS, GCP, and OpenStack (including
 Search for "Barnacle" in the Docker Desktop Extensions Marketplace, or install from the command line:
 
 ```bash
-docker extension install imds-tools/barnacle-imds-proxy
+docker extension install imdsutil/barnacle-imds-proxy
 ```
 
 ## How to use it
