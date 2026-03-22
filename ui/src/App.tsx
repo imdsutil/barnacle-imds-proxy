@@ -255,7 +255,7 @@ export function App() {
         onClose={handleSnackbarClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert onClose={handleSnackbarClose} severity={snackbarSeverity} variant="filled">
+        <Alert onClose={handleSnackbarClose} severity={snackbarSeverity} variant="standard">
           {snackbarMessage}
         </Alert>
       </Snackbar>
