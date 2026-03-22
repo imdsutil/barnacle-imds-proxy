@@ -4,7 +4,7 @@ A Docker Desktop extension that intercepts container IMDS requests and forwards 
 
 ## What it does
 
-When containers run locally, they often expect an Instance Metadata Service (IMDS) at the well-known cloud provider addresses (`169.254.169.254`, etc.). Barnacle sits at those addresses inside Docker Desktop's VM and proxies requests to your own IMDS server, adding headers that identify which container made the request. This lets you serve different metadata to different containers — useful for testing IAM role assumptions, instance identity, and other IMDS-dependent code without deploying to the cloud.
+When containers run locally, they often expect an Instance Metadata Service (IMDS) at the well-known cloud provider addresses (`169.254.169.254`, etc.). Barnacle sits at those addresses inside Docker Desktop's VM and proxies requests to your own IMDS server, adding headers that identify which container made the request. This lets you serve different metadata to different containers which is useful for testing IAM role assumptions, instance identity, and other IMDS-dependent code without deploying to the cloud.
 
 Supports the standard IMDS address ranges for AWS, GCP, and OpenStack (including IPv6).
 
@@ -18,7 +18,7 @@ docker extension install imdsutil/barnacle-imds-proxy
 
 ## How to use it
 
-1. Open the extension in Docker Desktop and set the URL of your IMDS server.
+1. Open the extension in Docker Desktop and set the URL of your IMDS server. You can use `localhost` here and the proxy will rewrite it to `host.docker.internal` for you.
 2. Add the label `imds-proxy.enabled=true` to any container you want to proxy. In Compose:
 
    ```yaml
@@ -41,8 +41,8 @@ docker extension install imdsutil/barnacle-imds-proxy
 
 The extension runs two services inside the Docker Desktop VM:
 
-- **Controller** — watches Docker events for containers with the enabled label, connects them to the IMDS networks, and tracks their state. Exposes a socket so the proxy can look up container info by IP.
-- **Proxy** — binds to the IMDS addresses on dedicated Docker networks and forwards requests to your configured server, adding `X-Container-Id`, `X-Container-Name`, and container label headers.
+- The **controller** watches Docker events for containers with the enabled label, connects them to the IMDS networks, and tracks their state. Exposes a socket so the proxy can look up container info by IP.
+- The **proxy** binds to the IMDS addresses on dedicated Docker networks and forwards requests to your configured server, adding `X-Container-Id`, `X-Container-Name`, and container label headers.
 
 When a labeled container starts, the controller pauses it briefly, attaches it to the IMDS networks, then unpauses it. This ensures the network routes are in place before the container's entrypoint runs.
 
