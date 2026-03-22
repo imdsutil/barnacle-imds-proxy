@@ -33,6 +33,10 @@ type Response struct {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	for k, v := range r.Header {
+		w.Header().Set("X-Echo-"+k, v[0])
+	}
+
 	response := Response{
 		Message:   "Hello from test server!",
 		Timestamp: time.Now(),
