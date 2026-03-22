@@ -22,7 +22,7 @@ export const TEST_SETTINGS_URL = 'http://localhost:8080';
 export const TEST_CONTAINER_ID = 'abc123';
 export const TEST_NETWORK_ID = 'net1';
 export const TEST_NETWORK_NAME = 'bridge';
-const TEST_LABELS = { 'imds-tools.imds-proxy.enabled': 'true' };
+const TEST_LABELS = { 'imds-proxy.enabled': 'true' };
 
 /**
  * Creates a mock Docker Desktop client with configurable service methods

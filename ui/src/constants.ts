@@ -40,4 +40,4 @@ export const GITHUB_REPO_URL = 'https://github.com/imds-tools/barnacle-imds-prox
 /**
  * Container label that enables IMDS proxying
  */
-export const IMDS_PROXY_ENABLED_LABEL = 'imds-tools.imds-proxy.enabled=true';
+export const IMDS_PROXY_ENABLED_LABEL = 'imds-proxy.enabled=true';

@@ -486,7 +486,7 @@ func monitorDockerEvents() {
 				case "create":
 					logger.Infof("Container created: %s (image: %s)", shortID(event.Actor.ID), event.Actor.Attributes["image"])
 					// Check if container has the enabled label
-					if event.Actor.Attributes["imds-tools.imds-proxy.enabled"] == "true" {
+					if event.Actor.Attributes["imds-proxy.enabled"] == "true" {
 						if err := addContainerToTrackingWithNetwork(ctx, dockerClient, event.Actor.ID, true); err != nil {
 							logger.Errorf("Failed to add container to tracking: %v", err)
 						}
@@ -512,17 +512,17 @@ func scanExistingContainers(ctx context.Context, cli DockerClient) error {
 	if err != nil {
 		return err
 	}
-	logger.Infof("Found %d existing containers. Now scanning for imds-tools.imds-proxy.enabled=true label", len(containers))
+	logger.Infof("Found %d existing containers. Now scanning for imds-proxy.enabled=true label", len(containers))
 
 	for _, ctr := range containers {
-		if ctr.Labels != nil && ctr.Labels["imds-tools.imds-proxy.enabled"] == "true" {
+		if ctr.Labels != nil && ctr.Labels["imds-proxy.enabled"] == "true" {
 			if err := addContainerToTrackingWithNetwork(ctx, cli, ctr.ID, false); err != nil {
 				logger.Errorf("Failed to add existing container to tracking: %v", err)
 			}
 		}
 	}
 
-	logger.Infof("Scanned existing containers, found %d with imds-tools.imds-proxy.enabled=true", len(trackedContainers))
+	logger.Infof("Scanned existing containers, found %d with imds-proxy.enabled=true", len(trackedContainers))
 	return nil
 }
 
