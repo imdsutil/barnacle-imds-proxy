@@ -100,7 +100,7 @@ describe('App', () => {
     const copyButton = await screen.findByRole('button', { name: /copy label text/i });
     copyButton.click();
 
-    expect(mockWriteText).toHaveBeenCalledWith('imds-tools.imds-proxy.enabled=true');
+    expect(mockWriteText).toHaveBeenCalledWith('imds-proxy.enabled=true');
 
     await waitFor(() => {
       expect(screen.getByText('Copied label to clipboard')).toBeTruthy();

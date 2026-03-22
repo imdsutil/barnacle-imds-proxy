@@ -46,11 +46,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Push extension images
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push extension images to GHCR
         env:
           TAG_FULL: ${{ needs.release-please.outputs.tag_name }}
         run: |
           make push-extension \
             IMAGE="${{ vars.DOCKER_IMAGE }}" \
             PROXY_IMAGE="${{ vars.DOCKER_IMAGE_PROXY }}" \
+            TAG="${TAG_FULL#v}"
+
+      - name: Push extension images to Docker Hub
+        env:
+          TAG_FULL: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          make push-extension \
+            IMAGE="${{ vars.DOCKERHUB_IMAGE }}" \
+            PROXY_IMAGE="${{ vars.DOCKERHUB_IMAGE_PROXY }}" \
             TAG="${TAG_FULL#v}"

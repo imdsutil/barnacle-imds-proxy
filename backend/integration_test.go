@@ -114,7 +114,7 @@ func TestContainerLifecycleIntegration(t *testing.T) {
 	testIP := "172.20.0.5"
 	testNetworkID := "net123"
 	testLabels := map[string]string{
-		"imds-tools.imds-proxy.enabled": "true",
+		"imds-proxy.enabled": "true",
 		"app":                           "test-app",
 	}
 
@@ -155,7 +155,7 @@ func TestContainerLifecycleIntegration(t *testing.T) {
 		Actor: events.Actor{
 			ID: testContainerID,
 			Attributes: map[string]string{
-				"imds-tools.imds-proxy.enabled": "true",
+				"imds-proxy.enabled": "true",
 				"image":                         "test-image:latest",
 			},
 		},

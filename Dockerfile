@@ -31,13 +31,13 @@ LABEL org.opencontainers.image.title="Barnacle IMDS Proxy" \
     org.opencontainers.image.description="${DESCRIPTION}" \
     org.opencontainers.image.vendor="Matt Miller" \
     com.docker.desktop.extension.api.version="0.4.2" \
-    com.docker.extension.screenshots='[{"alt":"Barnacle IMDS Proxy UI","url":"https://raw.githubusercontent.com/imds-tools/barnacle-imds-proxy/refs/heads/main/screenshots/screenshot1.png"}]' \
-    com.docker.desktop.extension.icon="https://raw.githubusercontent.com/imds-tools/barnacle-imds-proxy/refs/heads/main/logo.svg" \
-    com.docker.extension.detailed-description="<h1>Barnacle IMDS Proxy</h1>" \
+    com.docker.extension.screenshots='[{"alt":"Barnacle IMDS Proxy UI","url":"https://raw.githubusercontent.com/imdsutil/barnacle-imds-proxy/refs/heads/main/screenshots/screenshot1.png"}]' \
+    com.docker.desktop.extension.icon="https://raw.githubusercontent.com/imdsutil/barnacle-imds-proxy/refs/heads/main/logo.svg" \
+    com.docker.extension.detailed-description="<p>Intercepts container requests to cloud Instance Metadata Service (IMDS) endpoints and forwards them to a server you control. Adds headers identifying the source container, so you can serve different metadata to different containers.</p><h3>Why</h3><p>Testing IMDS-dependent code locally is annoying. Containers expect a metadata service at 169.254.169.254 (or the IPv6 equivalents), and it isn't there. Barnacle puts a proxy at those addresses inside the Docker Desktop VM and routes requests to your own server.</p><h3>How it works</h3><p>Add the label <code>imds-proxy.enabled=true</code> to a container and point the extension at your IMDS server URL. The extension automatically connects labeled containers to the proxy networks and forwards their IMDS requests with container identity headers attached.</p><h3>Supported providers</h3><ul><li>AWS / GCP — 169.254.169.254 (IPv4) and fd00:ec2::254 (IPv6)</li><li>OpenStack — fd00:a9fe:a9fe::254 (IPv6)</li></ul>" \
     com.docker.extension.publisher-url="https://github.com/millermatt" \
-    com.docker.extension.additional-urls='[{"title":"Documentation","url":"https://github.com/imds-tools/barnacle-imds-proxy"}, {"title":"Terms of Service","url":"https://github.com/imds-tools/barnacle-imds-proxy/blob/main/LICENSE"}]' \
+    com.docker.extension.additional-urls='[{"title":"Documentation","url":"https://github.com/imdsutil/barnacle-imds-proxy"}, {"title":"Terms of Service","url":"https://github.com/imdsutil/barnacle-imds-proxy/blob/main/LICENSE"}]' \
     com.docker.extension.categories="networking,testing-tools" \
-    com.docker.extension.changelog="https://raw.githubusercontent.com/imds-tools/barnacle-imds-proxy/refs/heads/main/CHANGELOG.md"
+    com.docker.extension.changelog="https://raw.githubusercontent.com/imdsutil/barnacle-imds-proxy/refs/heads/main/CHANGELOG.md"
 
 COPY --from=builder /backend/bin/service /
 COPY docker-compose.yaml .
