@@ -6,6 +6,7 @@
 - Go 1.24+
 - Node.js 24+ and pnpm
 - Make
+- [bats-core](https://github.com/bats-core/bats-core) (for e2e tests)
 
 ## Build and install locally
 
@@ -42,6 +43,18 @@ make test-coverage
 ```
 
 There's also `make bench` for benchmarks and `make regression` for the full suite including race detection and integration tests.
+
+### End-to-end tests
+
+The e2e tests use [bats](https://github.com/bats-core/bats-core) and run against a live extension install. Install bats with `npm install -g bats`, `brew install bats-core`, or `apt install bats`.
+
+The test script starts its own test server and cleans up after itself. The extension must be installed and its URL set to `localhost:8080` before running:
+
+```bash
+make test-e2e
+```
+
+These tests start a labeled container, verify it gets attached to the IMDS networks, check that IMDS addresses are reachable, and confirm the proxy forwards container identity headers.
 
 ## Linting
 

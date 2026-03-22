@@ -107,6 +107,10 @@ test-backend-integration: ## Run backend integration tests
 	@echo "$(INFO_COLOR)Running backend integration tests...$(NO_COLOR)"
 	cd backend && go test -v -tags=integration -run Integration ./...
 
+test-e2e: ## Run end-to-end test against a running extension (start test server first)
+	@echo "$(INFO_COLOR)Running e2e tests...$(NO_COLOR)"
+	bats scripts/test-e2e.sh
+
 regression: lint test test-race test-integration test-backend-integration ## Run comprehensive regression test suite
 
 regression-ci: lint test ## Run regression suite for CI (excluding stress tests)
