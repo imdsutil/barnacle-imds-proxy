@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.2.3...v0.3.0) (2026-03-22)
+
+
+### Features
+
+* simplify container label and add marketplace description ([71ff7e0](https://github.com/imdsutil/barnacle-imds-proxy/commit/71ff7e08f13b9ed29383db39d50188d677467092))
+
 ## [0.2.3](https://github.com/imds-tools/barnacle-imds-proxy/compare/v0.2.2...v0.2.3) (2026-03-13)
 
 
