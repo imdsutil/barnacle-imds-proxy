@@ -1,3 +1,5 @@
+<img src="logo.svg" width="128" alt="Barnacle IMDS Proxy">
+
 # Barnacle IMDS Proxy
 
 A Docker Desktop extension that intercepts container IMDS requests and forwards them to a server you control.
@@ -5,6 +7,8 @@ A Docker Desktop extension that intercepts container IMDS requests and forwards 
 ## What it does
 
 When containers run locally, they often expect an Instance Metadata Service (IMDS) at the well-known cloud provider addresses (`169.254.169.254`, etc.). Barnacle sits at those addresses inside Docker Desktop's VM and proxies requests to your own IMDS server, adding headers that identify which container made the request. This lets you serve different metadata to different containers which is useful for testing IAM role assumptions, instance identity, and other IMDS-dependent code without deploying to the cloud.
+
+Pair it with an IMDS server that assumes IAM roles based on container labels, and your local containers get real AWS credentials with no code changes and no static keys.
 
 Supports the standard IMDS address ranges for AWS, GCP, and OpenStack (including IPv6).
 
