@@ -1,3 +1,3 @@
 {
-  "description": "Routes container requests for default IMDS endpoints to your configured server. Adds container info to request headers to allow for custom per-container IMDS responses."
+  "description": "Proxies container IMDS requests to your own server with container identity headers. Pair with a credential-serving IMDS server for real cloud credentials in local development."
 }
