@@ -58,10 +58,11 @@ describe('ContainersTable', () => {
     );
 
     const rows = screen.getAllByRole('row');
-    // Skip header row (index 0)
+    // Skip header row (index 0); each data row is followed by a collapsed expansion row,
+    // so data rows are at odd indices: 1, 3, 5, ...
     expect(rows[1].textContent).toContain('alpha-container');
-    expect(rows[2].textContent).toContain('beta-container');
-    expect(rows[3].textContent).toContain('zebra-container');
+    expect(rows[3].textContent).toContain('beta-container');
+    expect(rows[5].textContent).toContain('zebra-container');
   });
 
   it('sorts by name descending when clicking name column twice', () => {
@@ -80,8 +81,8 @@ describe('ContainersTable', () => {
 
     const rows = screen.getAllByRole('row');
     expect(rows[1].textContent).toContain('zebra-container');
-    expect(rows[2].textContent).toContain('beta-container');
-    expect(rows[3].textContent).toContain('alpha-container');
+    expect(rows[3].textContent).toContain('beta-container');
+    expect(rows[5].textContent).toContain('alpha-container');
   });
 
   it('sorts by container ID when clicking ID column', () => {
@@ -102,8 +103,8 @@ describe('ContainersTable', () => {
     // IDs start with: "111...", "abc...", "xyz..."
     // Ascending alphabetically: "111" < "abc" < "xyz"
     expect(rows[1].textContent).toContain('111222333444');
-    expect(rows[2].textContent).toContain('abc123def456');
-    expect(rows[3].textContent).toContain('xyz987wvu654');
+    expect(rows[3].textContent).toContain('abc123def456');
+    expect(rows[5].textContent).toContain('xyz987wvu654');
   });
 
   it('paginates containers correctly', () => {
@@ -122,8 +123,9 @@ describe('ContainersTable', () => {
     );
 
     // Default is 10 per page, should show container-0 through container-9
+    // Each data row has a sibling expansion row, so total = 1 header + N*2 rows
     let rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE + 1); // 1 header + default data rows
+    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE * 2 + 1);
 
     // Click next page
     const nextButton = screen.getByRole('button', { name: /next page/i });
@@ -131,7 +133,7 @@ describe('ContainersTable', () => {
 
     // Should now show remaining 5 containers (sorted alphabetically: container-5 through container-9)
     rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(PAGINATION_SET_SIZE - DEFAULT_PAGE_SIZE + 1);
+    expect(rows).toHaveLength((PAGINATION_SET_SIZE - DEFAULT_PAGE_SIZE) * 2 + 1);
     expect(rows[1].textContent).toContain('container-5');
   });
 
@@ -149,9 +151,9 @@ describe('ContainersTable', () => {
       />
     );
 
-    // Default is 10 per page
+    // Default is 10 per page; each data row has a sibling expansion row
     let rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE + 1); // 1 header + default data rows
+    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE * 2 + 1);
 
     // Change to 25 per page
     const rowsPerPageSelect = screen.getByRole('combobox');
@@ -160,7 +162,7 @@ describe('ContainersTable', () => {
     fireEvent.click(option25);
 
     rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(PAGE_SIZE_25 + 1); // 1 header + 25 data rows
+    expect(rows).toHaveLength(PAGE_SIZE_25 * 2 + 1);
   });
 
   it('copy button triggers callback without selecting row', () => {
