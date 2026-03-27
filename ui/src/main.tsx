@@ -17,6 +17,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import CssBaseline from "@mui/material/CssBaseline";
+import GlobalStyles from "@mui/material/GlobalStyles";
 import { DockerMuiV6ThemeProvider } from "@docker/docker-mui-theme";
 
 import { App } from './App';
@@ -30,6 +31,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     */}
     <DockerMuiV6ThemeProvider>
       <CssBaseline />
+      <GlobalStyles styles={{ html: { scrollbarGutter: 'stable', overflow: 'hidden' }, body: { margin: 0, paddingLeft: '16px', overflow: 'hidden' } }} />
       <App />
     </DockerMuiV6ThemeProvider>
   </React.StrictMode>

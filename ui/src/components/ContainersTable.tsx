@@ -26,10 +26,14 @@ import {
   IconButton,
   Tooltip,
   Typography,
-  TablePagination,
   Stack,
+  Collapse,
+  Box,
+  Skeleton,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { ContainerInfo } from '../types';
 import { CONTAINER_ID_DISPLAY_LENGTH } from '../constants';
 import { cleanContainerName } from '../utils/containerUtils';
@@ -37,21 +41,21 @@ import { cleanContainerName } from '../utils/containerUtils';
 interface ContainersTableProps {
   containers: ContainerInfo[];
   isLoading: boolean;
-  error: string | null;
   onCopyToClipboard: (text: string, label: string) => void;
+  proxyUnreachable?: boolean;
+  onProxyHelp?: () => void;
 }
 
 export function ContainersTable({
   containers,
   isLoading,
-  error,
   onCopyToClipboard,
+  proxyUnreachable,
+  onProxyHelp,
 }: ContainersTableProps) {
-  const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
+  const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'id'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const handleSort = (column: 'name' | 'id') => {
     const isAsc = sortBy === column && sortOrder === 'asc';
@@ -60,77 +64,40 @@ export function ContainersTable({
   };
 
   const sortedContainers = useMemo(() => {
-    const sorted = [...containers].sort((a, b) => {
-      let aValue: string;
-      let bValue: string;
-
-      if (sortBy === 'name') {
-        aValue = cleanContainerName(a.name).toLowerCase();
-        bValue = cleanContainerName(b.name).toLowerCase();
-      } else {
-        aValue = a.containerId;
-        bValue = b.containerId;
-      }
-
-      if (sortOrder === 'asc') {
-        return aValue.localeCompare(bValue);
-      } else {
-        return bValue.localeCompare(aValue);
-      }
+    return [...containers].sort((a, b) => {
+      const aValue = sortBy === 'name'
+        ? cleanContainerName(a.name).toLowerCase()
+        : a.containerId;
+      const bValue = sortBy === 'name'
+        ? cleanContainerName(b.name).toLowerCase()
+        : b.containerId;
+      return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
     });
-
-    return sorted;
   }, [containers, sortBy, sortOrder]);
 
-  const paginatedContainers = useMemo(() => {
-    const startIndex = page * rowsPerPage;
-    const endIndex = startIndex + rowsPerPage;
-    return sortedContainers.slice(startIndex, endIndex);
-  }, [sortedContainers, page, rowsPerPage]);
-
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
+  const handleRowClick = (containerId: string) => {
+    setExpandedContainer((prev) => (prev === containerId ? null : containerId));
   };
 
   const handleCopyClick = (text: string, label: string, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent row selection when clicking copy button
+    event.stopPropagation(); // Prevent row expansion when clicking copy button
     onCopyToClipboard(text, label);
   };
 
-  if (isLoading && containers.length === 0) {
-    return (
-      <Typography variant="body1" color="text.secondary">
-        Loading containers...
-      </Typography>
-    );
-  }
+  const renderContent = () => {
+    if (isLoading && containers.length === 0) {
+      return (
+        <Stack spacing={1}>
+          <Skeleton variant="rectangular" height={40} />
+          <Skeleton variant="rectangular" height={40} />
+          <Skeleton variant="rectangular" height={40} />
+        </Stack>
+      );
+    }
 
-  if (error) {
     return (
-      <Typography variant="body1" color="error">
-        {error}
-      </Typography>
-    );
-  }
-
-  if (containers.length === 0) {
-    return (
-      <Typography variant="body1" color="text.secondary">
-        No tracked containers found
-      </Typography>
-    );
-  }
-
-  return (
-    <>
-      <Typography variant="h6">Enabled for these containers</Typography>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
+      <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, overflow: 'auto' }}>
+        <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>
@@ -152,109 +119,182 @@ export function ContainersTable({
                 </TableSortLabel>
               </TableCell>
               <TableCell>Networks</TableCell>
+              <TableCell padding="checkbox" />
             </TableRow>
           </TableHead>
           <TableBody>
-            {paginatedContainers.map((container) => {
+            {sortedContainers.map((container) => {
               const displayName = cleanContainerName(container.name);
+              const isExpanded = expandedContainer === container.containerId;
+              const sortedLabels = Object.entries(container.labels).sort(([a], [b]) =>
+                a.localeCompare(b),
+              );
               return (
-                <TableRow
-                  key={container.containerId}
-                  hover
-                  selected={selectedContainer === container.containerId}
-                  onClick={() => setSelectedContainer(container.containerId)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setSelectedContainer(container.containerId);
-                    }
-                  }}
-                  tabIndex={0}
-                  sx={{
-                    cursor: 'pointer',
-                    '& .copy-button': {
-                      opacity: 0,
-                      pointerEvents: 'none',
-                      transition: 'opacity 120ms ease-in-out',
-                    },
-                    '&:hover .copy-button': {
-                      opacity: 1,
-                      pointerEvents: 'auto',
-                    },
-                    '&:focus-within .copy-button': {
-                      opacity: 1,
-                      pointerEvents: 'auto',
-                    },
-                  }}
-                >
-                  <TableCell>
-                    <Stack direction="row" alignItems="center" spacing={0.5}>
-                      <Typography variant="body1">{displayName}</Typography>
-                      <Tooltip title="Copy name">
-                        <IconButton
-                          size="small"
-                          aria-label={`Copy container name ${displayName}`}
-                          onClick={(e) => handleCopyClick(displayName, 'container name', e)}
-                          className="copy-button"
-                          sx={{ padding: '2px' }}
-                        >
-                          <ContentCopyIcon fontSize="inherit" sx={{ fontSize: '0.75rem' }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" alignItems="center" spacing={0.5}>
-                      <Typography
-                        variant="body1"
-                        sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
-                      >
-                        {container.containerId.substring(0, CONTAINER_ID_DISPLAY_LENGTH)}
-                      </Typography>
-                      <Tooltip title="Copy full ID">
-                        <IconButton
-                          size="small"
-                          aria-label={`Copy container id ${container.containerId}`}
-                          onClick={(e) => handleCopyClick(container.containerId, 'container ID', e)}
-                          className="copy-button"
-                          sx={{ padding: '2px' }}
-                        >
-                          <ContentCopyIcon fontSize="inherit" sx={{ fontSize: '0.75rem' }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                      {[...container.networks]
-                        .sort((a, b) => a.networkName.localeCompare(b.networkName))
-                        .map((network) => (
-                          <Chip
-                            key={network.networkId}
-                            label={network.networkName}
+                <React.Fragment key={container.containerId}>
+                  <TableRow
+                    hover
+                    selected={isExpanded}
+                    onClick={() => handleRowClick(container.containerId)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleRowClick(container.containerId);
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    sx={{
+                      cursor: 'pointer',
+                      '& .copy-button': {
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        transition: 'opacity 120ms ease-in-out',
+                      },
+                      '&:hover .copy-button': {
+                        opacity: 1,
+                        pointerEvents: 'auto',
+                      },
+                      '&:focus-within .copy-button': {
+                        opacity: 1,
+                        pointerEvents: 'auto',
+                      },
+                    }}
+                  >
+                    <TableCell>
+                      <Stack direction="row" alignItems="center" spacing={0.5}>
+                        <Typography variant="body1">{displayName}</Typography>
+                        <Tooltip title="Copy name">
+                          <IconButton
                             size="small"
-                            variant="outlined"
-                          />
-                        ))}
-                    </Stack>
-                  </TableCell>
-                </TableRow>
+                            aria-label={`Copy container name ${displayName}`}
+                            onClick={(e) => handleCopyClick(displayName, 'container name', e)}
+                            className="copy-button"
+                            sx={{ padding: '2px' }}
+                          >
+                            <ContentCopyIcon fontSize="inherit" sx={{ fontSize: '0.75rem' }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Stack direction="row" alignItems="center" spacing={0.5}>
+                        <Typography
+                          variant="body1"
+                          sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                        >
+                          {container.containerId.substring(0, CONTAINER_ID_DISPLAY_LENGTH)}
+                        </Typography>
+                        <Tooltip title="Copy full ID">
+                          <IconButton
+                            size="small"
+                            aria-label={`Copy container id ${container.containerId}`}
+                            onClick={(e) =>
+                              handleCopyClick(container.containerId, 'container ID', e)
+                            }
+                            className="copy-button"
+                            sx={{ padding: '2px' }}
+                          >
+                            <ContentCopyIcon fontSize="inherit" sx={{ fontSize: '0.75rem' }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                        {[...container.networks]
+                          .sort((a, b) => a.networkName.localeCompare(b.networkName))
+                          .map((network) => (
+                            <Chip
+                              key={network.networkId}
+                              label={network.networkName}
+                              size="small"
+                              variant="outlined"
+                            />
+                          ))}
+                      </Stack>
+                    </TableCell>
+                    <TableCell padding="checkbox">
+                      <IconButton
+                        size="small"
+                        aria-label={isExpanded ? 'Collapse labels' : 'Expand labels'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRowClick(container.containerId);
+                        }}
+                      >
+                        {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={4} sx={{ pb: 0, pt: 0, borderBottom: isExpanded ? undefined : 'none' }}>
+                      <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                        <Box sx={{ py: 1.5, px: 1 }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Labels
+                          </Typography>
+                          {sortedLabels.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              No labels
+                            </Typography>
+                          ) : (
+                            <Stack spacing={0.25}>
+                              {sortedLabels.map(([key, value]) => (
+                                <Stack key={key} direction="row" spacing={2} alignItems="baseline">
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      fontFamily: 'monospace',
+                                      color: 'text.secondary',
+                                      minWidth: 240,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {key}
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                    {value}
+                                  </Typography>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          )}
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
               );
             })}
           </TableBody>
         </Table>
       </TableContainer>
-      {containers.length > 0 && (
-        <TablePagination
-          rowsPerPageOptions={[10, 25, 50, 100]}
-          component="div"
-          count={containers.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-        />
-      )}
-    </>
+    );
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>Enabled for these containers</Typography>
+      <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {renderContent()}
+      </Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5 }}>
+        <Box>
+          {proxyUnreachable && (
+            <Typography
+              variant="body2"
+              color="error"
+              onClick={onProxyHelp}
+              sx={{ cursor: onProxyHelp ? 'pointer' : 'default', textDecoration: onProxyHelp ? 'underline' : 'none' }}
+            >
+              Extension backend not responding — list may be outdated
+            </Typography>
+          )}
+        </Box>
+        <Typography variant="body2" color="text.secondary">
+          Showing {containers.length} {containers.length === 1 ? 'item' : 'items'}
+        </Typography>
+      </Stack>
+    </Box>
   );
 }

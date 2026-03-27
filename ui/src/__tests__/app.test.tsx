@@ -59,7 +59,7 @@ describe('App', () => {
 
     await waitFor(
       () => {
-        expect(screen.getByText('Failed to refresh containers')).toBeTruthy();
+        expect(screen.getByText(/Extension backend not responding/)).toBeTruthy();
       },
       { timeout: 3000 }
     );
@@ -97,7 +97,7 @@ describe('App', () => {
     render(<App />);
 
     // Find and click the label copy button
-    const copyButton = await screen.findByRole('button', { name: /copy label text/i });
+    const copyButton = await screen.findByRole('button', { name: /copy label to clipboard/i });
     copyButton.click();
 
     expect(mockWriteText).toHaveBeenCalledWith('imds-proxy.enabled=true');
@@ -125,7 +125,7 @@ describe('App', () => {
     render(<App />);
 
     // Find and click the label copy button
-    const copyButton = await screen.findByRole('button', { name: /copy label text/i });
+    const copyButton = await screen.findByRole('button', { name: /copy label to clipboard/i });
     copyButton.click();
 
     await waitFor(() => {
@@ -148,7 +148,7 @@ describe('App', () => {
     render(<App />);
 
     // Find and click the label copy button
-    const copyButton = await screen.findByRole('button', { name: /copy label text/i });
+    const copyButton = await screen.findByRole('button', { name: /copy label to clipboard/i });
 
     // Wrap click in act() since clipboard check causes synchronous state update
     act(() => {
