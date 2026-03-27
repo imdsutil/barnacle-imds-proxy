@@ -166,7 +166,7 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
         disabled={isSaving || url === savedUrl || isDebouncing}
         sx={{ alignSelf: 'flex-start' }}
       >
-        {isSaving ? 'Saving...' : 'Save Settings'}
+        {isSaving ? 'Saving...' : url === savedUrl && savedUrl !== '' ? 'Saved' : 'Save Settings'}
       </Button>
     </Stack>
   );
