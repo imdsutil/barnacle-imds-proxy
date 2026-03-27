@@ -188,7 +188,7 @@ export function App() {
   };
 
   return (
-    <Stack spacing={3} sx={{ p: 2 }}>
+    <Stack spacing={3} sx={{ pt: 2, pr: 2, pb: 2, pl: 0 }}>
       <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
         <Stack direction="row" spacing={2} alignItems="center">
           <Box

@@ -31,7 +31,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     */}
     <DockerMuiV6ThemeProvider>
       <CssBaseline />
-      <GlobalStyles styles={{ html: { scrollbarGutter: 'stable' } }} />
+      <GlobalStyles styles={{ html: { scrollbarGutter: 'stable' }, body: { margin: 0, paddingLeft: '16px' } }} />
       <App />
     </DockerMuiV6ThemeProvider>
   </React.StrictMode>
