@@ -14,9 +14,4 @@
  * limitations under the License.
  */
 
-export default {
-  extends: ["@commitlint/config-conventional"],
-  rules: {
-    "header-max-length": [2, "always", 90],
-  },
-};
+export default { extends: ['@commitlint/config-conventional'] };
