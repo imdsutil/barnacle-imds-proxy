@@ -39,9 +39,6 @@ const mockContainers = [
   }),
 ];
 
-const DEFAULT_PAGE_SIZE = 10;
-const PAGE_SIZE_25 = 25;
-const PAGINATION_SET_SIZE = 15;
 const LARGE_SET_SIZE = 30;
 const ALPHA_CONTAINER_ID = '111222333444555666777888999000aaabbb';
 
@@ -107,39 +104,8 @@ describe('ContainersTable', () => {
     expect(rows[5].textContent).toContain('xyz987wvu654');
   });
 
-  it('paginates containers correctly', () => {
+  it('shows all containers without pagination', () => {
     const mockCallback = vi.fn();
-
-    // Create 15 containers to test pagination
-    const manyContainers = createMockContainers(PAGINATION_SET_SIZE);
-
-    render(
-      <ContainersTable
-        containers={manyContainers}
-        isLoading={false}
-        error={null}
-        onCopyToClipboard={mockCallback}
-      />
-    );
-
-    // Default is 10 per page, should show container-0 through container-9
-    // Each data row has a sibling expansion row, so total = 1 header + N*2 rows
-    let rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE * 2 + 1);
-
-    // Click next page
-    const nextButton = screen.getByRole('button', { name: /next page/i });
-    fireEvent.click(nextButton);
-
-    // Should now show remaining 5 containers (sorted alphabetically: container-5 through container-9)
-    rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength((PAGINATION_SET_SIZE - DEFAULT_PAGE_SIZE) * 2 + 1);
-    expect(rows[1].textContent).toContain('container-5');
-  });
-
-  it('changes rows per page correctly', () => {
-    const mockCallback = vi.fn();
-
     const manyContainers = createMockContainers(LARGE_SET_SIZE);
 
     render(
@@ -151,18 +117,10 @@ describe('ContainersTable', () => {
       />
     );
 
-    // Default is 10 per page; each data row has a sibling expansion row
-    let rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(DEFAULT_PAGE_SIZE * 2 + 1);
-
-    // Change to 25 per page
-    const rowsPerPageSelect = screen.getByRole('combobox');
-    fireEvent.mouseDown(rowsPerPageSelect);
-    const option25 = screen.getByRole('option', { name: String(PAGE_SIZE_25) });
-    fireEvent.click(option25);
-
-    rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(PAGE_SIZE_25 * 2 + 1);
+    // All containers rendered at once: 1 header + N data rows + N expansion rows
+    const rows = screen.getAllByRole('row');
+    expect(rows).toHaveLength(LARGE_SET_SIZE * 2 + 1);
+    expect(screen.getByText(`Showing ${LARGE_SET_SIZE} items`)).toBeDefined();
   });
 
   it('copy button triggers callback without selecting row', () => {

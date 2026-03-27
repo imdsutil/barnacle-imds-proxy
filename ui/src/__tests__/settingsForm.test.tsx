@@ -46,7 +46,7 @@ describe('SettingsForm', () => {
     );
 
     await waitFor(() => {
-      const input = screen.getByLabelText(/URL of your IMDS server/i) as HTMLInputElement;
+      const input = screen.getByLabelText(/IMDS server URL/i) as HTMLInputElement;
       expect(input.value).toBe(SETTINGS_URL);
     });
 
@@ -69,7 +69,7 @@ describe('SettingsForm', () => {
     );
 
     await waitFor(() => {
-      const input = screen.getByLabelText(/URL of your IMDS server/i) as HTMLInputElement;
+      const input = screen.getByLabelText(/IMDS server URL/i) as HTMLInputElement;
       expect(input.value).toBe(LOCAL_URL);
     });
 
@@ -92,7 +92,7 @@ describe('SettingsForm', () => {
       />
     );
 
-    const input = await screen.findByLabelText(/URL of your IMDS server/i);
+    const input = await screen.findByLabelText(/IMDS server URL/i);
     fireEvent.change(input, { target: { value: '' } });
 
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
@@ -118,7 +118,7 @@ describe('SettingsForm', () => {
       />
     );
 
-    const input = await screen.findByLabelText(/URL of your IMDS server/i);
+    const input = await screen.findByLabelText(/IMDS server URL/i);
 
     vi.useFakeTimers();
     fireEvent.change(input, { target: { value: 'http://new' } });

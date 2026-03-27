@@ -133,41 +133,38 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
   };
 
   return (
-    <Stack spacing={2}>
-      <Stack spacing={1}>
-        <Typography variant="h6">Settings</Typography>
-      </Stack>
+    <Stack spacing={1}>
+      <Typography variant="subtitle1">Settings</Typography>
       {isLoadingSettings ? (
         <Skeleton variant="rectangular" height={40} />
       ) : (
-        <TextField
-          type="text"
-          label="URL of your IMDS server"
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            setUrlError(false);
-          }}
-          variant="outlined"
-          size="small"
-          error={urlError}
-          helperText={
-            urlError
-              ? 'URL is required'
-              : 'Examples: http://localhost:8080, http://example.com:8080, https://api.example.com'
-          }
-          fullWidth
-          spellCheck={false}
-        />
+        <>
+          <TextField
+            type="text"
+            label="IMDS server URL"
+            placeholder="http://localhost:8080"
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setUrlError(false);
+            }}
+            variant="outlined"
+            size="small"
+            error={urlError}
+            helperText={urlError ? 'URL is required' : 'Examples: http://localhost:8080, https://api.example.com'}
+            fullWidth
+            spellCheck={false}
+          />
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={isSaving || url === savedUrl || isDebouncing}
+            sx={{ alignSelf: 'flex-start' }}
+          >
+            {isSaving ? 'Saving...' : url === savedUrl && savedUrl !== '' ? 'Saved' : 'Save Settings'}
+          </Button>
+        </>
       )}
-      <Button
-        variant="contained"
-        onClick={handleSave}
-        disabled={isSaving || url === savedUrl || isDebouncing}
-        sx={{ alignSelf: 'flex-start' }}
-      >
-        {isSaving ? 'Saving...' : url === savedUrl && savedUrl !== '' ? 'Saved' : 'Save Settings'}
-      </Button>
     </Stack>
   );
 }

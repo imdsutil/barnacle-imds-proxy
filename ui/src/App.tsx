@@ -37,6 +37,8 @@ import {
   Snackbar,
   Alert,
   Link,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -64,6 +66,8 @@ export function App() {
   const { client: ddClient, error: clientError } = useDockerDesktopClient();
   const service = useDockerDesktopService(ddClient);
 
+  const [activeTab, setActiveTab] = useState(0);
+
   // Container state
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [isLoadingContainers, setIsLoadingContainers] = useState(false);
@@ -74,12 +78,7 @@ export function App() {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
 
-  // App metadata
-  const [appDescription, setAppDescription] = useState('');
-
   // Track mount status to prevent state updates after unmount during async operations
-  // This avoids "Can't perform a React state update on an unmounted component" warnings
-  // during container polling
   const isMountedRef = useRef(false);
   // Only show the loading skeleton on the first fetch, not on background poll refreshes
   const hasLoadedOnceRef = useRef(false);
@@ -135,7 +134,6 @@ export function App() {
 
     loadContainers();
 
-    // Poll more frequently for faster updates
     const interval = setInterval(loadContainers, CONTAINER_POLL_INTERVAL_MS);
 
     return () => {
@@ -143,19 +141,6 @@ export function App() {
       clearInterval(interval);
     };
   }, [ddClient, loadContainers]);
-
-  useEffect(() => {
-    fetch('./description.json')
-      .then(res => res.json())
-      .then(data => {
-        if (data.description) {
-          setAppDescription(data.description);
-        }
-      })
-      .catch(() => {
-        // Fail silently if description.json can't be loaded
-      });
-  }, []);
 
   const copyToClipboard = (text: string, label: string) => {
     if (!navigator.clipboard || !navigator.clipboard.writeText) {
@@ -188,8 +173,9 @@ export function App() {
   };
 
   return (
-    <Stack spacing={3} sx={{ pt: 2, pr: 2, pb: 2, pl: 0 }}>
-      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+    <Box sx={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', pt: 0, pr: 1, pb: 3, pl: 0 }}>
+      {/* Header */}
+      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Box
             component="img"
@@ -211,52 +197,66 @@ export function App() {
         </Link>
       </Stack>
 
-      <Stack spacing={1.5}>
-        <Typography variant="body1">
-          {appDescription}
-        </Typography>
-      </Stack>
+      {/* Tabs */}
+      <Tabs
+        value={activeTab}
+        onChange={(_e, newValue: number) => setActiveTab(newValue)}
+        sx={{ mb: 1.5, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab label="Containers" />
+        <Tab label="Settings" />
+      </Tabs>
 
-      <SettingsForm ddClient={ddClient} service={service} showSnackbar={showSnackbar} />
-
-      <Stack spacing={2}>
-        <Typography variant="body1">
-          Add the following label to a container to enable IMDS proxying for it:
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Box
-            component="code"
-            sx={{
-              px: 1,
-              py: 0.5,
-              borderRadius: 0.5,
-              bgcolor: 'action.hover',
-              border: '1px solid',
-              borderColor: 'divider',
-              fontFamily: 'monospace',
-              fontSize: '0.875rem',
-            }}
-          >
-            {IMDS_PROXY_ENABLED_LABEL}
-          </Box>
-          <Tooltip title="Copy label">
-            <IconButton
-              size="small"
-              aria-label="Copy label to clipboard"
-              onClick={() => copyToClipboard(IMDS_PROXY_ENABLED_LABEL, 'label')}
+      {/* Containers tab */}
+      {activeTab === 0 && (
+        <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+            <Typography variant="body2">
+              Add the following label to a container to enable IMDS proxying:
+            </Typography>
+            <Box
+              component="code"
+              sx={{
+                px: 1,
+                py: 0.25,
+                borderRadius: 0.5,
+                bgcolor: 'action.hover',
+                border: '1px solid',
+                borderColor: 'divider',
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                whiteSpace: 'nowrap',
+              }}
             >
-              <ContentCopyIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+              {IMDS_PROXY_ENABLED_LABEL}
+            </Box>
+            <Tooltip title="Copy label">
+              <IconButton
+                size="small"
+                aria-label="Copy label to clipboard"
+                onClick={() => copyToClipboard(IMDS_PROXY_ENABLED_LABEL, 'label')}
+              >
+                <ContentCopyIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+
+          <ContainersTable
+            containers={containers}
+            isLoading={isLoadingContainers}
+            error={containersError}
+            onCopyToClipboard={copyToClipboard}
+            onRetry={loadContainers}
+          />
         </Box>
-        <ContainersTable
-          containers={containers}
-          isLoading={isLoadingContainers}
-          error={containersError}
-          onCopyToClipboard={copyToClipboard}
-          onRetry={loadContainers}
-        />
-      </Stack>
+      )}
+
+      {/* Settings tab */}
+      {activeTab === 1 && (
+        <Box sx={{ maxWidth: 600 }}>
+          <SettingsForm ddClient={ddClient} service={service} showSnackbar={showSnackbar} />
+        </Box>
+      )}
 
       <Snackbar
         open={snackbarOpen}
@@ -268,6 +268,6 @@ export function App() {
           {snackbarMessage}
         </Alert>
       </Snackbar>
-    </Stack>
+    </Box>
   );
 }

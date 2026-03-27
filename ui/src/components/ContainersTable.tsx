@@ -26,7 +26,6 @@ import {
   IconButton,
   Tooltip,
   Typography,
-  TablePagination,
   Stack,
   Collapse,
   Box,
@@ -58,8 +57,6 @@ export function ContainersTable({
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'id'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const handleSort = (column: 'name' | 'id') => {
     const isAsc = sortBy === column && sortOrder === 'asc';
@@ -68,42 +65,16 @@ export function ContainersTable({
   };
 
   const sortedContainers = useMemo(() => {
-    const sorted = [...containers].sort((a, b) => {
-      let aValue: string;
-      let bValue: string;
-
-      if (sortBy === 'name') {
-        aValue = cleanContainerName(a.name).toLowerCase();
-        bValue = cleanContainerName(b.name).toLowerCase();
-      } else {
-        aValue = a.containerId;
-        bValue = b.containerId;
-      }
-
-      if (sortOrder === 'asc') {
-        return aValue.localeCompare(bValue);
-      } else {
-        return bValue.localeCompare(aValue);
-      }
+    return [...containers].sort((a, b) => {
+      const aValue = sortBy === 'name'
+        ? cleanContainerName(a.name).toLowerCase()
+        : a.containerId;
+      const bValue = sortBy === 'name'
+        ? cleanContainerName(b.name).toLowerCase()
+        : b.containerId;
+      return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
     });
-
-    return sorted;
   }, [containers, sortBy, sortOrder]);
-
-  const paginatedContainers = useMemo(() => {
-    const startIndex = page * rowsPerPage;
-    const endIndex = startIndex + rowsPerPage;
-    return sortedContainers.slice(startIndex, endIndex);
-  }, [sortedContainers, page, rowsPerPage]);
-
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
 
   const handleRowClick = (containerId: string) => {
     setExpandedContainer((prev) => (prev === containerId ? null : containerId));
@@ -149,10 +120,10 @@ export function ContainersTable({
   }
 
   return (
-    <>
-      <Typography variant="h6">Enabled for these containers</Typography>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>Enabled for these containers</Typography>
+      <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, overflow: 'auto' }}>
+        <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>
@@ -178,7 +149,7 @@ export function ContainersTable({
             </TableRow>
           </TableHead>
           <TableBody>
-            {paginatedContainers.map((container) => {
+            {sortedContainers.map((container) => {
               const displayName = cleanContainerName(container.name);
               const isExpanded = expandedContainer === container.containerId;
               const sortedLabels = Object.entries(container.labels).sort(([a], [b]) =>
@@ -324,17 +295,9 @@ export function ContainersTable({
           </TableBody>
         </Table>
       </TableContainer>
-      {containers.length > 0 && (
-        <TablePagination
-          rowsPerPageOptions={[10, 25, 50, 100]}
-          component="div"
-          count={containers.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-        />
-      )}
-    </>
+      <Typography variant="body2" color="text.secondary" align="right" sx={{ mt: 0.5 }}>
+        Showing {containers.length} {containers.length === 1 ? 'item' : 'items'}
+      </Typography>
+    </Box>
   );
 }
