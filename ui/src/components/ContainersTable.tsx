@@ -137,8 +137,10 @@ export function ContainersTable({
                     onClick={() => handleRowClick(container.containerId)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleRowClick(container.containerId);
+                        if (event.target === event.currentTarget) {
+                          event.preventDefault();
+                          handleRowClick(container.containerId);
+                        }
                       }
                     }}
                     tabIndex={0}
