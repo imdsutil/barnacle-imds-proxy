@@ -22,20 +22,14 @@ const mockContainers = [
   createMockContainer({
     containerId: 'abc123def456ghi789jkl012mno345pqr678',
     name: '/zebra-container',
-    networks: [
-      { networkId: 'net1', networkName: 'bridge' },
-      { networkId: 'net2', networkName: 'custom' },
-    ],
   }),
   createMockContainer({
     containerId: '111222333444555666777888999000aaabbb',
     name: '/alpha-container',
-    networks: [{ networkId: 'net3', networkName: 'host' }],
   }),
   createMockContainer({
     containerId: 'xyz987wvu654tsr321qpo098nml876kjh543',
     name: '/beta-container',
-    networks: [{ networkId: 'net4', networkName: 'overlay' }],
   }),
 ];
 

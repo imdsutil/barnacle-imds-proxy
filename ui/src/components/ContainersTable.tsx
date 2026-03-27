@@ -118,7 +118,7 @@ export function ContainersTable({
                   Container ID
                 </TableSortLabel>
               </TableCell>
-              <TableCell>Networks</TableCell>
+              <TableCell>IMDS Networks</TableCell>
               <TableCell padding="checkbox" />
             </TableRow>
           </TableHead>
@@ -201,16 +201,24 @@ export function ContainersTable({
                     </TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                        {[...container.networks]
+                        {[...container.imdsNetworks]
                           .sort((a, b) => a.networkName.localeCompare(b.networkName))
-                          .map((network) => (
-                            <Chip
-                              key={network.networkId}
-                              label={network.networkName}
-                              size="small"
-                              variant="outlined"
-                            />
-                          ))}
+                          .map((n) => {
+                            const providerLabel = n.providers.join(' / ');
+                            const tooltipText = n.connected
+                              ? `${n.providers.join(' and ')} IMDS requests are being proxied for this container.`
+                              : `${n.providers.join(' and ')} IMDS requests will not be proxied. This container is not connected to the required network.`;
+                            return (
+                              <Tooltip key={n.networkName} title={tooltipText}>
+                                <Chip
+                                  label={providerLabel}
+                                  color={n.connected ? 'success' : 'error'}
+                                  size="small"
+                                  variant="outlined"
+                                />
+                              </Tooltip>
+                            );
+                          })}
                       </Stack>
                     </TableCell>
                     <TableCell padding="checkbox">

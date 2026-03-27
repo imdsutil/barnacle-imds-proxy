@@ -20,8 +20,6 @@ import { ContainerInfo } from '../types';
 
 export const TEST_SETTINGS_URL = 'http://localhost:8080';
 export const TEST_CONTAINER_ID = 'abc123';
-export const TEST_NETWORK_ID = 'net1';
-export const TEST_NETWORK_NAME = 'bridge';
 const TEST_LABELS = { 'imds-proxy.enabled': 'true' };
 
 /**
@@ -59,7 +57,10 @@ export const createMockContainer = (overrides?: Partial<ContainerInfo>): Contain
   containerId: 'abc123def456ghi789jkl012mno345pqr678',
   name: '/test-container',
   labels: { ...TEST_LABELS },
-  networks: [{ networkId: TEST_NETWORK_ID, networkName: TEST_NETWORK_NAME }],
+  imdsNetworks: [
+    { networkName: '.imds_aws_gcp', providers: ['AWS', 'GCP'], connected: true },
+    { networkName: '.imds_openstack', providers: ['OpenStack'], connected: true },
+  ],
   ...overrides,
 });
 
@@ -71,7 +72,10 @@ export const createMockContainers = (count: number = 3): ContainerInfo[] => {
     containerId: `container-id-${i.toString().padStart(32, '0')}`,
     name: `/container-${i}`,
     labels: { ...TEST_LABELS },
-    networks: [{ networkId: `net${i}`, networkName: TEST_NETWORK_NAME }],
+    imdsNetworks: [
+      { networkName: '.imds_aws_gcp', providers: ['AWS', 'GCP'], connected: true },
+      { networkName: '.imds_openstack', providers: ['OpenStack'], connected: true },
+    ],
   }));
 };
 

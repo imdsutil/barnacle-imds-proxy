@@ -20,8 +20,6 @@ import {
   createMockContainer,
   TEST_SETTINGS_URL,
   TEST_CONTAINER_ID,
-  TEST_NETWORK_ID,
-  TEST_NETWORK_NAME,
 } from './testHelpers';
 
 describe('Type Guards', () => {
@@ -55,7 +53,6 @@ describe('Type Guards', () => {
           containerId: TEST_CONTAINER_ID,
           name: '/my-container',
           labels: { key: 'value' },
-          networks: [{ networkId: TEST_NETWORK_ID, networkName: TEST_NETWORK_NAME }],
         }),
       ];
       expect(isContainersResponse(containers)).toBe(true);
@@ -82,13 +79,13 @@ describe('Type Guards', () => {
       expect(isContainersResponse(invalidContainers)).toBe(false);
     });
 
-    it('should return false if networks is not an array', () => {
+    it('should return false if imdsNetworks is not an array', () => {
       const invalidContainers = [
         {
           containerId: TEST_CONTAINER_ID,
           name: '/my-container',
           labels: {},
-          networks: 'not-an-array',
+          imdsNetworks: 'not-an-array',
         },
       ];
       expect(isContainersResponse(invalidContainers)).toBe(false);
