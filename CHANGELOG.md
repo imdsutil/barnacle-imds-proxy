@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.3.0...v0.4.0) (2026-03-27)
+
+
+### Features
+
+* add bats e2e tests for cross-platform verification ([d7522d5](https://github.com/imdsutil/barnacle-imds-proxy/commit/d7522d58796cf207bd91924d6c1f78c77eb676dd))
+* **test-server:** add /status endpoint for tracking proxied requests ([e4c62b1](https://github.com/imdsutil/barnacle-imds-proxy/commit/e4c62b111bc9078250d6dbab88598ade840fe8e8))
+* **test-server:** echo request headers back in response headers ([9a0c260](https://github.com/imdsutil/barnacle-imds-proxy/commit/9a0c26015fe87f8e24ddab147d677b66638e084e))
+* **ui:** comprehensive UX overhaul of Docker Desktop extension ([3729c87](https://github.com/imdsutil/barnacle-imds-proxy/commit/3729c87301d80ca630efc1a0dee4997884498d35))
+* **ui:** expand container rows to show labels ([198f475](https://github.com/imdsutil/barnacle-imds-proxy/commit/198f4753b22d283d52cd8aef293dd6795246473e))
+* **ui:** improve backend unreachable UX across containers and settings tabs ([a5f4353](https://github.com/imdsutil/barnacle-imds-proxy/commit/a5f4353e05f4bf73ce30e2e126ee5103c2c61ea8))
+* **ui:** redesign layout with tabs, full-height table, and tighter spacing ([5bfc136](https://github.com/imdsutil/barnacle-imds-proxy/commit/5bfc136532aa88a7f7597f53219d4f5ca3cf90a8))
+
+
+### Bug Fixes
+
+* **ui:** address empty state, copy affordance, error retry, and loading consistency ([79aff0b](https://github.com/imdsutil/barnacle-imds-proxy/commit/79aff0b4ecd27ac574c72c13f1e99c10891d139a))
+* **ui:** align left margin with Docker Desktop native sections ([9b2e9fb](https://github.com/imdsutil/barnacle-imds-proxy/commit/9b2e9fb22aa8f8276e13ae80eab265cf8af3ac68))
+* **ui:** improve Save button state clarity ([24d1a83](https://github.com/imdsutil/barnacle-imds-proxy/commit/24d1a83facd903672b8caff0c2b437524d7ab686))
+* **ui:** suppress scrollbar flicker and skeleton flash during container polls ([3ab62ed](https://github.com/imdsutil/barnacle-imds-proxy/commit/3ab62ed0deb1ff426a83ef27dee0123b04e0daf9))
+* use standard alert variant for light mode readability ([a3b8c51](https://github.com/imdsutil/barnacle-imds-proxy/commit/a3b8c5150e54fb62b979fcb98dd9705a8644c416))
+
 ## [0.3.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.2.3...v0.3.0) (2026-03-22)
 
 
