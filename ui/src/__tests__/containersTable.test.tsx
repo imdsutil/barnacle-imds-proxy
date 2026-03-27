@@ -223,7 +223,8 @@ describe('ContainersTable', () => {
       />
     );
 
-    expect(screen.getByText('Loading containers...')).toBeDefined();
+    // Skeleton renders as a div with no text — just verify the table is not shown
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('displays error message when error is set', () => {
@@ -254,7 +255,7 @@ describe('ContainersTable', () => {
       />
     );
 
-    expect(screen.getByText('No tracked containers found')).toBeDefined();
+    expect(screen.getByText(/No containers with the IMDS proxy label are running/)).toBeDefined();
   });
 
   it('does not show loading message when loading but has containers', () => {

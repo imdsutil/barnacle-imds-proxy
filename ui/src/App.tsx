@@ -215,37 +215,41 @@ export function App() {
       <SettingsForm ddClient={ddClient} service={service} showSnackbar={showSnackbar} />
 
       <Stack spacing={2}>
-        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
-          Add a
+        <Typography variant="body1">
+          Add the following label to a container to enable IMDS proxying for it:
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Box
             component="code"
             sx={{
-              px: 0.5,
-              py: 0.25,
+              px: 1,
+              py: 0.5,
               borderRadius: 0.5,
               bgcolor: 'action.hover',
+              border: '1px solid',
+              borderColor: 'divider',
               fontFamily: 'monospace',
+              fontSize: '0.875rem',
             }}
           >
             {IMDS_PROXY_ENABLED_LABEL}
-            <Tooltip title="Copy label">
-              <IconButton
-                size="small"
-                aria-label="Copy label text"
-                onClick={() => copyToClipboard(IMDS_PROXY_ENABLED_LABEL, 'label')}
-                sx={{ padding: '2px' }}
-              >
-                <ContentCopyIcon fontSize="inherit" sx={{ fontSize: '0.75rem' }} />
-              </IconButton>
-            </Tooltip>
           </Box>
-          label to containers to enable IMDS proxying for them.
-        </Typography>
+          <Tooltip title="Copy label">
+            <IconButton
+              size="small"
+              aria-label="Copy label to clipboard"
+              onClick={() => copyToClipboard(IMDS_PROXY_ENABLED_LABEL, 'label')}
+            >
+              <ContentCopyIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
         <ContainersTable
           containers={containers}
           isLoading={isLoadingContainers}
           error={containersError}
           onCopyToClipboard={copyToClipboard}
+          onRetry={loadContainers}
         />
       </Stack>
 

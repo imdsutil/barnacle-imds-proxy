@@ -30,6 +30,8 @@ import {
   Stack,
   Collapse,
   Box,
+  Button,
+  Skeleton,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -43,6 +45,7 @@ interface ContainersTableProps {
   isLoading: boolean;
   error: string | null;
   onCopyToClipboard: (text: string, label: string) => void;
+  onRetry?: () => void;
 }
 
 export function ContainersTable({
@@ -50,6 +53,7 @@ export function ContainersTable({
   isLoading,
   error,
   onCopyToClipboard,
+  onRetry,
 }: ContainersTableProps) {
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'id'>('name');
@@ -112,24 +116,34 @@ export function ContainersTable({
 
   if (isLoading && containers.length === 0) {
     return (
-      <Typography variant="body1" color="text.secondary">
-        Loading containers...
-      </Typography>
+      <Stack spacing={1}>
+        <Skeleton variant="rectangular" height={40} />
+        <Skeleton variant="rectangular" height={40} />
+        <Skeleton variant="rectangular" height={40} />
+      </Stack>
     );
   }
 
   if (error) {
     return (
-      <Typography variant="body1" color="error">
-        {error}
-      </Typography>
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <Typography variant="body1" color="error">
+          {error}
+        </Typography>
+        {onRetry && (
+          <Button size="small" variant="outlined" color="error" onClick={onRetry}>
+            Retry
+          </Button>
+        )}
+      </Stack>
     );
   }
 
   if (containers.length === 0) {
     return (
       <Typography variant="body1" color="text.secondary">
-        No tracked containers found
+        No containers with the IMDS proxy label are running. Start a container with the label above
+        to see it here.
       </Typography>
     );
   }
