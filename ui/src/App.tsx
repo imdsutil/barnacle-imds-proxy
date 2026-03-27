@@ -81,6 +81,8 @@ export function App() {
   // This avoids "Can't perform a React state update on an unmounted component" warnings
   // during container polling
   const isMountedRef = useRef(false);
+  // Only show the loading skeleton on the first fetch, not on background poll refreshes
+  const hasLoadedOnceRef = useRef(false);
 
   const showSnackbar = useCallback((message: string, severity: 'success' | 'error') => {
     setSnackbarMessage(message);
@@ -93,12 +95,15 @@ export function App() {
       return;
     }
 
-    setIsLoadingContainers(true);
+    if (!hasLoadedOnceRef.current) {
+      setIsLoadingContainers(true);
+    }
     setContainersError(null);
 
     try {
       const result = await service.getContainers();
       if (isContainersResponse(result) && isMountedRef.current) {
+        hasLoadedOnceRef.current = true;
         setContainers(result);
       } else if (isMountedRef.current) {
         showSnackbar('Unexpected containers response format', 'error');
