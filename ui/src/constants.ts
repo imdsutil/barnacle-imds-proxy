@@ -41,3 +41,9 @@ export const GITHUB_REPO_URL = 'https://github.com/imdsutil/barnacle-imds-proxy'
  * Container label that enables IMDS proxying
  */
 export const IMDS_PROXY_ENABLED_LABEL = 'imds-proxy.enabled=true';
+
+/**
+ * Timeout for backend API calls (in milliseconds). Calls that hang beyond this
+ * are treated as failures so the UI does not wait indefinitely.
+ */
+export const BACKEND_REQUEST_TIMEOUT_MS = 5000;

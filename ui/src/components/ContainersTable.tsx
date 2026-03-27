@@ -29,7 +29,6 @@ import {
   Stack,
   Collapse,
   Box,
-  Button,
   Skeleton,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -42,17 +41,17 @@ import { cleanContainerName } from '../utils/containerUtils';
 interface ContainersTableProps {
   containers: ContainerInfo[];
   isLoading: boolean;
-  error: string | null;
   onCopyToClipboard: (text: string, label: string) => void;
-  onRetry?: () => void;
+  proxyUnreachable?: boolean;
+  onProxyHelp?: () => void;
 }
 
 export function ContainersTable({
   containers,
   isLoading,
-  error,
   onCopyToClipboard,
-  onRetry,
+  proxyUnreachable,
+  onProxyHelp,
 }: ContainersTableProps) {
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'id'>('name');
@@ -85,43 +84,18 @@ export function ContainersTable({
     onCopyToClipboard(text, label);
   };
 
-  if (isLoading && containers.length === 0) {
-    return (
-      <Stack spacing={1}>
-        <Skeleton variant="rectangular" height={40} />
-        <Skeleton variant="rectangular" height={40} />
-        <Skeleton variant="rectangular" height={40} />
-      </Stack>
-    );
-  }
+  const renderContent = () => {
+    if (isLoading && containers.length === 0) {
+      return (
+        <Stack spacing={1}>
+          <Skeleton variant="rectangular" height={40} />
+          <Skeleton variant="rectangular" height={40} />
+          <Skeleton variant="rectangular" height={40} />
+        </Stack>
+      );
+    }
 
-  if (error) {
     return (
-      <Stack direction="row" alignItems="center" spacing={1}>
-        <Typography variant="body1" color="error">
-          {error}
-        </Typography>
-        {onRetry && (
-          <Button size="small" variant="outlined" color="error" onClick={onRetry}>
-            Retry
-          </Button>
-        )}
-      </Stack>
-    );
-  }
-
-  if (containers.length === 0) {
-    return (
-      <Typography variant="body1" color="text.secondary">
-        No containers with the IMDS proxy label are running. Start a container with the label above
-        to see it here.
-      </Typography>
-    );
-  }
-
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Typography variant="subtitle1" sx={{ mb: 1 }}>Enabled for these containers</Typography>
       <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, overflow: 'auto' }}>
         <Table size="small" stickyHeader>
           <TableHead>
@@ -295,9 +269,32 @@ export function ContainersTable({
           </TableBody>
         </Table>
       </TableContainer>
-      <Typography variant="body2" color="text.secondary" align="right" sx={{ mt: 0.5 }}>
-        Showing {containers.length} {containers.length === 1 ? 'item' : 'items'}
-      </Typography>
+    );
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>Enabled for these containers</Typography>
+      <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {renderContent()}
+      </Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5 }}>
+        <Box>
+          {proxyUnreachable && (
+            <Typography
+              variant="body2"
+              color="error"
+              onClick={onProxyHelp}
+              sx={{ cursor: onProxyHelp ? 'pointer' : 'default', textDecoration: onProxyHelp ? 'underline' : 'none' }}
+            >
+              Extension backend not responding — list may be outdated
+            </Typography>
+          )}
+        </Box>
+        <Typography variant="body2" color="text.secondary">
+          Showing {containers.length} {containers.length === 1 ? 'item' : 'items'}
+        </Typography>
+      </Stack>
     </Box>
   );
 }

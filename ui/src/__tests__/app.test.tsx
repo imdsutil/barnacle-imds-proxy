@@ -59,7 +59,7 @@ describe('App', () => {
 
     await waitFor(
       () => {
-        expect(screen.getByText('Failed to refresh containers')).toBeTruthy();
+        expect(screen.getByText(/Extension backend not responding/)).toBeTruthy();
       },
       { timeout: 3000 }
     );

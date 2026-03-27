@@ -13,20 +13,31 @@
 // limitations under the License.
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Stack, TextField, Typography, Skeleton } from '@mui/material';
+import { Stack, TextField, Typography, Skeleton, Alert } from '@mui/material';
 import Button from '@mui/material/Button';
 import { createDockerDesktopClient } from '@docker/extension-api-client';
 import { DockerDesktopServiceClient } from '../services/dockerDesktopService';
 import { isSettingsResponse } from '../types';
-import { SAVE_DEBOUNCE_MS } from '../constants';
+import { SAVE_DEBOUNCE_MS, BACKEND_REQUEST_TIMEOUT_MS } from '../constants';
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out')), ms)
+    ),
+  ]);
+}
 
 interface SettingsFormProps {
   ddClient: ReturnType<typeof createDockerDesktopClient> | null;
   service: DockerDesktopServiceClient;
   showSnackbar: (message: string, severity: 'success' | 'error') => void;
+  proxyUnreachable?: boolean;
+  onProxyHelp?: () => void;
 }
 
-export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormProps) {
+export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable, onProxyHelp }: SettingsFormProps) {
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState(false);
   const [savedUrl, setSavedUrl] = useState('');
@@ -47,7 +58,7 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
     const loadSettings = async () => {
       setIsLoadingSettings(true);
       try {
-        const result = await service.getSettings();
+        const result = await withTimeout(service.getSettings(), BACKEND_REQUEST_TIMEOUT_MS);
         if (isSettingsResponse(result)) {
           const settings = result;
           const url = settings.url || '';
@@ -60,16 +71,11 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
           showSnackbar('Unexpected settings response format', 'error');
         }
       } catch (error) {
-        if (isMountedRef.current) {
-          showSnackbar('Failed to load settings from backend', 'error');
-        }
-        // Fallback to localStorage if backend is not available
+        // Silently fall back to localStorage if the backend is unavailable.
         const savedUrl = localStorage.getItem('url') || '';
-
         if (isMountedRef.current) {
           setUrl(savedUrl);
           setSavedUrl(savedUrl);
-          showSnackbar('Backend unavailable, using local settings', 'error');
         }
       } finally {
         if (isMountedRef.current) {
@@ -105,7 +111,10 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
     try {
       const settings = { url };
 
-      await ddClient.extension.vm?.service?.post('/settings', settings);
+      await withTimeout(
+        ddClient.extension.vm?.service?.post('/settings', settings) ?? Promise.resolve(),
+        BACKEND_REQUEST_TIMEOUT_MS,
+      );
 
       // Save settings locally after successful backend save
       localStorage.setItem('url', url);
@@ -135,6 +144,20 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
   return (
     <Stack spacing={1}>
       <Typography variant="subtitle1">Settings</Typography>
+      {proxyUnreachable && (
+        <Alert
+          severity="warning"
+          action={
+            onProxyHelp && (
+              <Button color="inherit" size="small" onClick={onProxyHelp}>
+                Get help
+              </Button>
+            )
+          }
+        >
+          Extension backend not responding. Your last saved settings are shown below, but changes cannot be saved.
+        </Alert>
+      )}
       {isLoadingSettings ? (
         <Skeleton variant="rectangular" height={40} />
       ) : (
@@ -158,7 +181,7 @@ export function SettingsForm({ ddClient, service, showSnackbar }: SettingsFormPr
           <Button
             variant="contained"
             onClick={handleSave}
-            disabled={isSaving || url === savedUrl || isDebouncing}
+            disabled={isSaving || url === savedUrl || isDebouncing || proxyUnreachable}
             sx={{ alignSelf: 'flex-start' }}
           >
             {isSaving ? 'Saving...' : url === savedUrl && savedUrl !== '' ? 'Saved' : 'Save Settings'}

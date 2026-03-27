@@ -73,8 +73,7 @@ describe('SettingsForm', () => {
       expect(input.value).toBe(LOCAL_URL);
     });
 
-    expect(showSnackbar).toHaveBeenNthCalledWith(1, 'Failed to load settings from backend', 'error');
-    expect(showSnackbar).toHaveBeenNthCalledWith(2, 'Backend unavailable, using local settings', 'error');
+    expect(showSnackbar).not.toHaveBeenCalled();
   });
 
   it('validates required URL before saving', async () => {

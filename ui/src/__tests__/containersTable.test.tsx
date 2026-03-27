@@ -49,7 +49,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={mockContainers}
         isLoading={false}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
@@ -68,7 +67,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={mockContainers}
         isLoading={false}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
@@ -88,7 +86,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={mockContainers}
         isLoading={false}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
@@ -112,7 +109,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={manyContainers}
         isLoading={false}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
@@ -129,7 +125,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={mockContainers}
         isLoading={false}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
@@ -153,7 +148,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={mockContainers}
         isLoading={false}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
@@ -176,44 +170,12 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={[]}
         isLoading={true}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );
 
     // Skeleton renders as a div with no text — just verify the table is not shown
     expect(screen.queryByRole('table')).toBeNull();
-  });
-
-  it('displays error message when error is set', () => {
-    const mockCallback = vi.fn();
-    const errorMessage = 'Failed to fetch containers';
-
-    render(
-      <ContainersTable
-        containers={[]}
-        isLoading={false}
-        error={errorMessage}
-        onCopyToClipboard={mockCallback}
-      />
-    );
-
-   expect(screen.getByText(errorMessage)).toBeDefined();
-  });
-
-  it('displays empty state message when no containers are tracked', () => {
-    const mockCallback = vi.fn();
-
-    render(
-      <ContainersTable
-        containers={[]}
-        isLoading={false}
-        error={null}
-        onCopyToClipboard={mockCallback}
-      />
-    );
-
-    expect(screen.getByText(/No containers with the IMDS proxy label are running/)).toBeDefined();
   });
 
   it('does not show loading message when loading but has containers', () => {
@@ -223,7 +185,6 @@ describe('ContainersTable', () => {
       <ContainersTable
         containers={mockContainers}
         isLoading={true}
-        error={null}
         onCopyToClipboard={mockCallback}
       />
     );

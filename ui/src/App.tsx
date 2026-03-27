@@ -21,7 +21,17 @@ import {
   SNACKBAR_AUTO_HIDE_DURATION_MS,
   GITHUB_REPO_URL,
   IMDS_PROXY_ENABLED_LABEL,
+  BACKEND_REQUEST_TIMEOUT_MS,
 } from './constants';
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out')), ms)
+    ),
+  ]);
+}
 import {
   ContainerInfo,
   isContainersResponse,
@@ -39,6 +49,14 @@ import {
   Link,
   Tabs,
   Tab,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  List,
+  ListItem,
+  ListItemText,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -67,11 +85,12 @@ export function App() {
   const service = useDockerDesktopService(ddClient);
 
   const [activeTab, setActiveTab] = useState(0);
+  const [proxyUnreachable, setProxyUnreachable] = useState(false);
+  const [proxyHelpOpen, setProxyHelpOpen] = useState(false);
 
   // Container state
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [isLoadingContainers, setIsLoadingContainers] = useState(false);
-  const [containersError, setContainersError] = useState<string | null>(null);
 
   // Snackbar notification state
   const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -97,23 +116,23 @@ export function App() {
     if (!hasLoadedOnceRef.current) {
       setIsLoadingContainers(true);
     }
-    setContainersError(null);
-
     try {
-      const result = await service.getContainers();
+      const result = await withTimeout(service.getContainers(), BACKEND_REQUEST_TIMEOUT_MS);
       if (isContainersResponse(result) && isMountedRef.current) {
         hasLoadedOnceRef.current = true;
         setContainers(result);
+        setProxyUnreachable(false);
       } else if (isMountedRef.current) {
         showSnackbar('Unexpected containers response format', 'error');
       }
     } catch (error) {
       console.error('Failed to load containers:', error);
       if (isMountedRef.current) {
-        showSnackbar('Failed to load containers', 'error');
-        setContainersError('Failed to refresh containers');
+        setProxyUnreachable(true);
       }
     } finally {
+      // Mark as attempted regardless of outcome so we never show the skeleton again
+      hasLoadedOnceRef.current = true;
       if (isMountedRef.current) {
         setIsLoadingContainers(false);
       }
@@ -244,9 +263,9 @@ export function App() {
           <ContainersTable
             containers={containers}
             isLoading={isLoadingContainers}
-            error={containersError}
             onCopyToClipboard={copyToClipboard}
-            onRetry={loadContainers}
+            proxyUnreachable={proxyUnreachable}
+            onProxyHelp={() => setProxyHelpOpen(true)}
           />
         </Box>
       )}
@@ -254,9 +273,63 @@ export function App() {
       {/* Settings tab */}
       {activeTab === 1 && (
         <Box sx={{ maxWidth: 600 }}>
-          <SettingsForm ddClient={ddClient} service={service} showSnackbar={showSnackbar} />
+          <SettingsForm
+            ddClient={ddClient}
+            service={service}
+            showSnackbar={showSnackbar}
+            proxyUnreachable={proxyUnreachable}
+            onProxyHelp={() => setProxyHelpOpen(true)}
+          />
         </Box>
       )}
+
+      <Dialog open={proxyHelpOpen} onClose={() => setProxyHelpOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Extension backend not responding</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            The Barnacle controller is not responding, so the container list may be outdated.
+            The IMDS proxy runs separately and may still be proxying IMDS traffic correctly.
+            To restore full functionality, try the following steps:
+          </Typography>
+          <List dense disablePadding>
+            <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
+              <ListItemText
+                primary="1. Restart the extension"
+                secondary="In Docker Desktop, open the Extensions Marketplace, find Barnacle, and click Disable then Enable."
+              />
+            </ListItem>
+            <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
+              <ListItemText
+                primary="2. Restart Docker Desktop"
+                secondary="Quit and relaunch Docker Desktop. This restarts all extension services."
+              />
+            </ListItem>
+            <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
+              <ListItemText
+                primary="3. Still not working?"
+                secondary={
+                  <Link
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (ddClient?.host?.openExternal) {
+                        ddClient.host.openExternal(`${GITHUB_REPO_URL}#troubleshooting`);
+                      } else {
+                        window.open(`${GITHUB_REPO_URL}#troubleshooting`, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
+                  >
+                    View the troubleshooting guide
+                  </Link>
+                }
+              />
+            </ListItem>
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProxyHelpOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snackbarOpen}
