@@ -39,7 +39,7 @@ interface SettingsFormProps {
 
 export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable, onProxyHelp }: SettingsFormProps) {
   const [url, setUrl] = useState('');
-  const [urlError, setUrlError] = useState(false);
+  const [urlError, setUrlError] = useState('');
   const [savedUrl, setSavedUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
@@ -93,16 +93,20 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
   const handleSave = async () => {
     // Reset errors
-    setUrlError(false);
+    setUrlError('');
 
     if (!ddClient) {
       showSnackbar('Docker Desktop client unavailable', 'error');
       return;
     }
 
-    // Validate that URL is filled
+    // Validate URL
     if (!url) {
-      setUrlError(true);
+      setUrlError('URL is required');
+      return;
+    }
+    if (!/^https?:\/\/[^/\\]/.test(url)) {
+      setUrlError('Enter a valid URL (e.g. http://localhost:8080)');
       return;
     }
 
@@ -169,12 +173,12 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
-              setUrlError(false);
+              setUrlError('');
             }}
             variant="outlined"
             size="small"
-            error={urlError}
-            helperText={urlError ? 'URL is required' : 'Examples: http://localhost:8080, https://api.example.com'}
+            error={!!urlError}
+            helperText={urlError || 'Examples: http://localhost:8080, https://api.example.com'}
             fullWidth
             spellCheck={false}
           />

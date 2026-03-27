@@ -102,6 +102,60 @@ describe('SettingsForm', () => {
     expect(client.extension.vm.service.post).not.toHaveBeenCalled();
   });
 
+  it('validates URL format before saving', async () => {
+    const service = createMockService({
+      getSettings: vi.fn().mockResolvedValue({ url: SETTINGS_URL }),
+    });
+    const showSnackbar = vi.fn();
+    const client = createMockDockerDesktopClient();
+
+    render(
+      <SettingsForm
+        ddClient={client as any}
+        service={service}
+        showSnackbar={showSnackbar}
+      />
+    );
+
+    const input = await screen.findByLabelText(/IMDS server URL/i);
+    fireEvent.change(input, { target: { value: 'not a url' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Enter a valid URL (e.g. http://localhost:8080)')).toBeTruthy();
+    });
+    expect(client.extension.vm.service.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed URLs', async () => {
+    const service = createMockService({
+      getSettings: vi.fn().mockResolvedValue({ url: SETTINGS_URL }),
+    });
+    const showSnackbar = vi.fn();
+    const client = createMockDockerDesktopClient();
+
+    render(
+      <SettingsForm
+        ddClient={client as any}
+        service={service}
+        showSnackbar={showSnackbar}
+      />
+    );
+
+    const input = await screen.findByLabelText(/IMDS server URL/i);
+    const invalidUrls = ['not a url', 'ftp://example.com', 'http://', 'http:///\\localhost:3000'];
+
+    for (const invalidUrl of invalidUrls) {
+      fireEvent.change(input, { target: { value: invalidUrl } });
+      fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+      await waitFor(() => {
+        expect(screen.getByText('Enter a valid URL (e.g. http://localhost:8080)')).toBeTruthy();
+      });
+    }
+    expect(client.extension.vm.service.post).not.toHaveBeenCalled();
+  });
+
   it('saves settings and debounces the button', async () => {
     const service = createMockService({
       getSettings: vi.fn().mockResolvedValue({ url: '' }),
