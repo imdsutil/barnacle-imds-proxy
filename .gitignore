@@ -9,3 +9,4 @@ backend/coverage.out
 proxy/coverage.out
 
 temp/
+.env

@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -33,6 +34,11 @@ type Response struct {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	trackRequest(r)
+	for k, v := range r.Header {
+		w.Header().Set("X-Echo-"+k, v[0])
+	}
+
 	response := Response{
 		Message:   "Hello from test server!",
 		Timestamp: time.Now(),
@@ -69,7 +75,50 @@ func logoHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Headers: %v", r.Header)
 }
 
+var (
+	mu             sync.Mutex
+	totalRequests  int
+	proxiedRequests int
+	lastProxied    time.Time
+	containers     = make(map[string]string) // id -> name
+)
+
+func trackRequest(r *http.Request) {
+	mu.Lock()
+	defer mu.Unlock()
+	totalRequests++
+	if id := r.Header.Get("X-Container-Id"); id != "" {
+		proxiedRequests++
+		lastProxied = time.Now()
+		containers[id] = r.Header.Get("X-Container-Name")
+	}
+}
+
+type StatusResponse struct {
+	TotalRequests   int               `json:"total_requests"`
+	ProxiedRequests int               `json:"proxied_requests"`
+	LastProxied     string            `json:"last_proxied,omitempty"`
+	Containers      map[string]string `json:"containers"`
+}
+
+func statusHandler(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	resp := StatusResponse{
+		TotalRequests:   totalRequests,
+		ProxiedRequests: proxiedRequests,
+		Containers:      containers,
+	}
+	if !lastProxied.IsZero() {
+		resp.LastProxied = lastProxied.Format(time.RFC3339)
+	}
+	mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func imdsRoleHandler(w http.ResponseWriter, r *http.Request) {
+	trackRequest(r)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("test-role"))
@@ -84,6 +133,7 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", *port)
 
+	http.HandleFunc("/status", statusHandler)
 	http.HandleFunc("/latest/meta-data/iam/security-credentials/", imdsRoleHandler)
 	http.HandleFunc("/logo.svg", logoHandler)
 	http.HandleFunc("/", handler)
