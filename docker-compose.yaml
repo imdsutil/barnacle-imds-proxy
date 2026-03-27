@@ -45,6 +45,9 @@ networks:
     name: ".imds_aws_gcp"
     driver: bridge
     enable_ipv6: true
+    labels:
+      imds-proxy.managed: "true"
+      imds-proxy.providers: "AWS,GCP"
     ipam:
       config:
         - subnet: 169.254.169.0/24
@@ -55,6 +58,9 @@ networks:
     name: ".imds_openstack"
     driver: bridge
     enable_ipv6: true
+    labels:
+      imds-proxy.managed: "true"
+      imds-proxy.providers: "OpenStack"
     ipam:
       config:
         - subnet: "fd00:a9fe:a9fe::/64"

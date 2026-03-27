@@ -62,6 +62,10 @@ func (f *fakeDockerClient) NetworkConnect(_ context.Context, networkID, _ string
 	return nil
 }
 
+func (f *fakeDockerClient) NetworkList(_ context.Context, _ network.ListOptions) ([]network.Summary, error) {
+	return []network.Summary{}, nil
+}
+
 func (f *fakeDockerClient) ContainerPause(_ context.Context, _ string) error {
 	f.pauseCalls++
 	return nil

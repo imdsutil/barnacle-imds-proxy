@@ -13,11 +13,12 @@
 // limitations under the License.
 
 /**
- * Network information for a container
+ * Status of a Barnacle-managed IMDS network for a container
  */
-export interface NetworkInfo {
-  networkId: string;
+export interface ImdsNetworkStatus {
   networkName: string;
+  providers: string[];
+  connected: boolean;
 }
 
 /**
@@ -27,7 +28,7 @@ export interface ContainerInfo {
   containerId: string;
   name: string;
   labels: Record<string, string>;
-  networks: NetworkInfo[];
+  imdsNetworks: ImdsNetworkStatus[];
 }
 
 /**
@@ -58,6 +59,6 @@ export const isContainersResponse = (value: unknown): value is ContainerInfo[] =
     typeof (item as ContainerInfo).containerId === 'string' &&
     typeof (item as ContainerInfo).name === 'string' &&
     typeof (item as ContainerInfo).labels === 'object' &&
-    Array.isArray((item as ContainerInfo).networks)
+    Array.isArray((item as ContainerInfo).imdsNetworks)
   );
 };

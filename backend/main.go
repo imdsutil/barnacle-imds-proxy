@@ -25,11 +25,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/labstack/echo/v4"
@@ -44,6 +46,8 @@ const (
 	imdsNetworkOpenStack        = ".imds_openstack"
 	proxySocketPath             = "/var/run/imds-proxy/backend.sock"
 	proxyNotificationSocketPath = "/var/run/imds-proxy/notifications.sock"
+	imdsManagedLabel            = "imds-proxy.managed"
+	imdsProvidersLabel          = "imds-proxy.providers"
 )
 
 type Settings struct {
@@ -65,11 +69,18 @@ type NetworkInfo struct {
 	NetworkName string `json:"networkName"`
 }
 
+type ImdsNetworkStatus struct {
+	NetworkName string   `json:"networkName"`
+	Providers   []string `json:"providers"`
+	Connected   bool     `json:"connected"`
+}
+
 type ContainerInfo struct {
-	ContainerID string            `json:"containerId"`
-	Name        string            `json:"name"`
-	Labels      map[string]string `json:"labels"`
-	Networks    []NetworkInfo     `json:"networks"`
+	ContainerID  string              `json:"containerId"`
+	Name         string              `json:"name"`
+	Labels       map[string]string   `json:"labels"`
+	Networks     []NetworkInfo       `json:"-"`
+	ImdsNetworks []ImdsNetworkStatus `json:"imdsNetworks"`
 }
 
 var (
@@ -84,6 +95,9 @@ var (
 	ipToContainerID      = make(map[string]string)
 	ipToContainerIDMutex sync.RWMutex
 
+	managedNetworks      []ImdsNetworkStatus
+	managedNetworksMutex sync.RWMutex
+
 	dockerClient DockerClient
 	shutdownChan = make(chan struct{})
 )
@@ -95,6 +109,7 @@ type DockerClient interface {
 	ContainerList(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
 	Events(ctx context.Context, options events.ListOptions) (<-chan events.Message, <-chan error)
 	NetworkConnect(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error
+	NetworkList(ctx context.Context, options network.ListOptions) ([]network.Summary, error)
 	ContainerPause(ctx context.Context, containerID string) error
 	ContainerUnpause(ctx context.Context, containerID string) error
 	Close() error
@@ -468,6 +483,11 @@ func monitorDockerEvents() {
 
 	logger.Infof("Started monitoring Docker container events")
 
+	// Discover managed IMDS networks
+	if err := discoverManagedNetworks(ctx, dockerClient); err != nil {
+		logger.Errorf("Failed to discover managed networks: %v", err)
+	}
+
 	// Scan existing containers
 	if err := scanExistingContainers(ctx, dockerClient); err != nil {
 		logger.Errorf("Failed to scan existing containers: %v", err)
@@ -496,6 +516,21 @@ func monitorDockerEvents() {
 					removeContainerFromTracking(event.Actor.ID)
 					// Notify proxy to clear cache for this container
 					go notifyProxyContainerDestroyed(event.Actor.ID)
+				}
+			} else if event.Type == events.NetworkEventType {
+				switch event.Action {
+				case "connect", "disconnect":
+					containerID := event.Actor.Attributes["container"]
+					if containerID != "" {
+						trackedContainersMutex.RLock()
+						_, tracked := trackedContainers[containerID]
+						trackedContainersMutex.RUnlock()
+						if tracked {
+							if err := refreshContainerNetworks(ctx, dockerClient, containerID); err != nil {
+								logger.Errorf("Failed to refresh networks for container %s: %v", shortID(containerID), err)
+							}
+						}
+					}
 				}
 			}
 		case err := <-errChan:
@@ -626,12 +661,89 @@ func removeContainerFromTracking(containerID string) {
 	}
 }
 
+func refreshContainerNetworks(ctx context.Context, cli DockerClient, containerID string) error {
+	inspect, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return err
+	}
+
+	networks := make([]NetworkInfo, 0)
+	for networkName, networkSettings := range inspect.NetworkSettings.Networks {
+		networks = append(networks, NetworkInfo{
+			NetworkID:   networkSettings.NetworkID,
+			NetworkName: networkName,
+		})
+	}
+
+	trackedContainersMutex.Lock()
+	info, exists := trackedContainers[containerID]
+	if exists {
+		info.Networks = networks
+		trackedContainers[containerID] = info
+	}
+	trackedContainersMutex.Unlock()
+
+	if exists {
+		updateIPIndex(containerID)
+		logger.Infof("Refreshed networks for container %s", shortID(containerID))
+	}
+
+	return nil
+}
+
+func discoverManagedNetworks(ctx context.Context, cli DockerClient) error {
+	networkList, err := cli.NetworkList(ctx, network.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", imdsManagedLabel+"=true")),
+	})
+	if err != nil {
+		return err
+	}
+
+	discovered := make([]ImdsNetworkStatus, 0, len(networkList))
+	for _, n := range networkList {
+		providers := []string{}
+		if p := n.Labels[imdsProvidersLabel]; p != "" {
+			for _, provider := range strings.Split(p, ",") {
+				providers = append(providers, strings.TrimSpace(provider))
+			}
+		}
+		discovered = append(discovered, ImdsNetworkStatus{
+			NetworkName: n.Name,
+			Providers:   providers,
+		})
+	}
+
+	managedNetworksMutex.Lock()
+	managedNetworks = discovered
+	managedNetworksMutex.Unlock()
+
+	logger.Infof("Discovered %d managed IMDS network(s)", len(discovered))
+	return nil
+}
+
 func getContainers(ctx echo.Context) error {
 	trackedContainersMutex.RLock()
 	defer trackedContainersMutex.RUnlock()
 
+	managedNetworksMutex.RLock()
+	networks := managedNetworks
+	managedNetworksMutex.RUnlock()
+
 	containerList := make([]ContainerInfo, 0, len(trackedContainers))
 	for _, info := range trackedContainers {
+		connectedNames := make(map[string]bool, len(info.Networks))
+		for _, n := range info.Networks {
+			connectedNames[n.NetworkName] = true
+		}
+		imdsNetworks := make([]ImdsNetworkStatus, 0, len(networks))
+		for _, mn := range networks {
+			imdsNetworks = append(imdsNetworks, ImdsNetworkStatus{
+				NetworkName: mn.NetworkName,
+				Providers:   mn.Providers,
+				Connected:   connectedNames[mn.NetworkName],
+			})
+		}
+		info.ImdsNetworks = imdsNetworks
 		containerList = append(containerList, info)
 	}
 
