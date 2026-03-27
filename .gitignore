@@ -10,3 +10,5 @@ proxy/coverage.out
 
 temp/
 .env
+
+node-compile-cache/
