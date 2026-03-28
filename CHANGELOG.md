@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.5.0...v0.6.0) (2026-03-28)
+
+
+### Features
+
+* **ui:** show empty state when no labeled containers are running ([51467ad](https://github.com/imdsutil/barnacle-imds-proxy/commit/51467ad265ad7a2d38bce1c382edf8abe3553b96))
+* **ui:** show empty state when no labeled containers are running ([bd399c4](https://github.com/imdsutil/barnacle-imds-proxy/commit/bd399c4685dfbb5502f614a620789d26e992a00f)), closes [#24](https://github.com/imdsutil/barnacle-imds-proxy/issues/24)
+
 ## [0.5.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.4.0...v0.5.0) (2026-03-28)
 
 
