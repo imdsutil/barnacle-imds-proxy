@@ -102,3 +102,22 @@ func TestHandleContainerLookupByIPError(t *testing.T) {
 		t.Fatalf("want status %d (%s), got %d (%s)", http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError), rec.Code, http.StatusText(rec.Code))
 	}
 }
+
+func TestHandleContainerLookupByIPSuccess(t *testing.T) {
+	withFindContainerByIP(t, func(ctx context.Context, _ DockerClient, ip string) (*ProxyLookupResponse, error) {
+		return &ProxyLookupResponse{
+			ContainerID: "abc123",
+			Name:        "/my-container",
+			Labels:      map[string]string{"env": "test"},
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/container-by-ip", bytes.NewBufferString(`{"ip":"10.0.0.12"}`))
+	rec := httptest.NewRecorder()
+
+	handleContainerLookupByIP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status %d (%s), got %d (%s)", http.StatusOK, http.StatusText(http.StatusOK), rec.Code, http.StatusText(rec.Code))
+	}
+}

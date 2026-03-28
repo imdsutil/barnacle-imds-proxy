@@ -32,7 +32,7 @@ import (
 
 const backendSocketPath = "/var/run/imds-proxy/backend.sock"
 
-const proxyNotificationSocketPath = "/var/run/imds-proxy/notifications.sock"
+var proxyNotificationSocketPath = "/var/run/imds-proxy/notifications.sock"
 
 const backendLookupPath = "http://unix/container-by-ip"
 
@@ -91,7 +91,7 @@ func main() {
 		log.Printf("Forward URL configured: %s", getForwardURL())
 	}
 
-	go startForwardURLRefresher()
+	go startForwardURLRefresher(context.Background())
 
 	// Start notification listener for config updates from backend
 	go startNotificationListener()
@@ -437,17 +437,25 @@ func setForwardURL(url string) {
 	forwardURL.Store(url)
 }
 
-func startForwardURLRefresher() {
-	ticker := time.NewTicker(10 * time.Second)
+var forwardURLRefreshInterval = 10 * time.Second
+
+func startForwardURLRefresher(ctx context.Context) {
+	ticker := time.NewTicker(forwardURLRefreshInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
 		if getForwardURL() != "" {
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		url, err := fetchForwardURL(ctx)
+		fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		url, err := fetchForwardURL(fetchCtx)
 		cancel()
 
 		if err != nil {

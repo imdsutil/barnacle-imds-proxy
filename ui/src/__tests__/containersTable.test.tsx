@@ -187,4 +187,88 @@ describe('ContainersTable', () => {
     expect(screen.queryByText('Loading containers...')).toBeNull();
     expect(screen.queryByText('webapp')).toBeDefined();
   });
+
+  it('clicking a row expands the labels panel', () => {
+    const mockCallback = vi.fn();
+    render(
+      <ContainersTable
+        containers={mockContainers}
+        isLoading={false}
+        onCopyToClipboard={mockCallback}
+      />
+    );
+
+    const rows = screen.getAllByRole('row');
+    fireEvent.click(rows[1]);
+
+    expect(screen.getByText('Labels')).toBeDefined();
+  });
+
+  it('expand button toggles label details independently of row click', () => {
+    const mockCallback = vi.fn();
+    render(
+      <ContainersTable
+        containers={mockContainers}
+        isLoading={false}
+        onCopyToClipboard={mockCallback}
+      />
+    );
+
+    const expandButtons = screen.getAllByRole('button', { name: /expand labels/i });
+    fireEvent.click(expandButtons[0]);
+
+    expect(screen.getByText('Labels')).toBeDefined();
+  });
+
+  it('shows no labels message when container has no labels', () => {
+    const mockCallback = vi.fn();
+    const container = createMockContainer({ labels: {} });
+    render(
+      <ContainersTable
+        containers={[container]}
+        isLoading={false}
+        onCopyToClipboard={mockCallback}
+      />
+    );
+
+    const expandButton = screen.getByRole('button', { name: /expand labels/i });
+    fireEvent.click(expandButton);
+
+    expect(screen.getByText('No labels')).toBeDefined();
+  });
+
+  it('shows proxy unreachable link and calls onProxyHelp when clicked', () => {
+    const mockCallback = vi.fn();
+    const onProxyHelp = vi.fn();
+    render(
+      <ContainersTable
+        containers={mockContainers}
+        isLoading={false}
+        onCopyToClipboard={mockCallback}
+        proxyUnreachable={true}
+        onProxyHelp={onProxyHelp}
+      />
+    );
+
+    const link = screen.getByText(/Extension backend not responding/i);
+    expect(link).toBeDefined();
+    fireEvent.click(link);
+    expect(onProxyHelp).toHaveBeenCalled();
+  });
+
+  it('pressing Enter on a row expands labels', () => {
+    const mockCallback = vi.fn();
+    render(
+      <ContainersTable
+        containers={mockContainers}
+        isLoading={false}
+        onCopyToClipboard={mockCallback}
+      />
+    );
+
+    const rows = screen.getAllByRole('row');
+    fireEvent.keyDown(rows[1], { key: 'Enter' });
+
+    expect(screen.getByText('Labels')).toBeDefined();
+  });
 });

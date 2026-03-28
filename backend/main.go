@@ -42,13 +42,14 @@ import (
 var logger = logrus.New()
 
 const (
-	imdsNetworkAWSGCP           = ".imds_aws_gcp"
-	imdsNetworkOpenStack        = ".imds_openstack"
-	proxySocketPath             = "/var/run/imds-proxy/backend.sock"
-	proxyNotificationSocketPath = "/var/run/imds-proxy/notifications.sock"
-	imdsManagedLabel            = "imds-proxy.managed"
-	imdsProvidersLabel          = "imds-proxy.providers"
+	imdsNetworkAWSGCP    = ".imds_aws_gcp"
+	imdsNetworkOpenStack = ".imds_openstack"
+	proxySocketPath      = "/var/run/imds-proxy/backend.sock"
+	imdsManagedLabel     = "imds-proxy.managed"
+	imdsProvidersLabel   = "imds-proxy.providers"
 )
+
+var proxyNotificationSocketPath = "/var/run/imds-proxy/notifications.sock"
 
 type Settings struct {
 	URL string `json:"url"`
@@ -103,6 +104,10 @@ var (
 )
 
 var findContainerByIPFn = findContainerByIP
+
+// notifyProxyConfigUpdateFn is a variable so tests can replace it with a no-op
+// to avoid spawning background goroutines that race with test cleanup.
+var notifyProxyConfigUpdateFn = notifyProxyConfigUpdate
 
 type DockerClient interface {
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
@@ -313,7 +318,7 @@ func saveSettings(ctx echo.Context) error {
 	}
 
 	// Notify proxy of config update
-	go notifyProxyConfigUpdate()
+	go notifyProxyConfigUpdateFn()
 
 	logger.Infof("Settings saved: url=%s", newSettings.URL)
 	return ctx.JSON(http.StatusOK, map[string]string{"message": "Settings saved successfully"})
@@ -753,6 +758,7 @@ func getContainers(ctx echo.Context) error {
 func notifyProxyConfigUpdate() {
 	maxRetries := 3
 	backoff := 100 * time.Millisecond
+	socketPath := proxyNotificationSocketPath
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
@@ -763,7 +769,7 @@ func notifyProxyConfigUpdate() {
 		client := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", proxyNotificationSocketPath)
+					return net.Dial("unix", socketPath)
 				},
 			},
 			Timeout: 5 * time.Second,
@@ -800,6 +806,7 @@ func notifyProxyConfigUpdate() {
 func notifyProxyContainerDestroyed(containerID string) {
 	maxRetries := 3
 	backoff := 100 * time.Millisecond
+	socketPath := proxyNotificationSocketPath
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
@@ -810,7 +817,7 @@ func notifyProxyContainerDestroyed(containerID string) {
 		client := &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", proxyNotificationSocketPath)
+					return net.Dial("unix", socketPath)
 				},
 			},
 			Timeout: 5 * time.Second,
