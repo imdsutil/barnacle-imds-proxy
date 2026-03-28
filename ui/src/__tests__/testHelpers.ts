@@ -58,9 +58,10 @@ export const createMockContainer = (overrides?: Partial<ContainerInfo>): Contain
   containerId: 'abc123def456ghi789jkl012mno345pqr678',
   name: '/test-container',
   labels: { ...TEST_LABELS },
-  imdsNetworks: [
-    { networkName: '.imds_aws_gcp', providers: ['AWS', 'GCP'], connected: true },
-    { networkName: '.imds_openstack', providers: ['OpenStack'], connected: true },
+  providers: [
+    { name: 'AWS', ipv4Connected: true, ipv6Connected: true },
+    { name: 'GCP', ipv4Connected: true, ipv6Connected: true },
+    { name: 'OpenStack', ipv4Connected: true, ipv6Connected: true },
   ],
   ...overrides,
 });
@@ -73,9 +74,10 @@ export const createMockContainers = (count: number = 3): ContainerInfo[] => {
     containerId: `container-id-${i.toString().padStart(32, '0')}`,
     name: `/container-${i}`,
     labels: { ...TEST_LABELS },
-    imdsNetworks: [
-      { networkName: '.imds_aws_gcp', providers: ['AWS', 'GCP'], connected: true },
-      { networkName: '.imds_openstack', providers: ['OpenStack'], connected: true },
+    providers: [
+      { name: 'AWS', ipv4Connected: true, ipv6Connected: true },
+      { name: 'GCP', ipv4Connected: true, ipv6Connected: true },
+      { name: 'OpenStack', ipv4Connected: true, ipv6Connected: true },
     ],
   }));
 };

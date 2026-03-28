@@ -35,7 +35,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import Link from '@mui/material/Link';
-import { ContainerInfo } from '../types';
+import { ContainerInfo, isProviderFullyConnected, isProviderPartiallyConnected } from '../types';
 import { CONTAINER_ID_DISPLAY_LENGTH } from '../constants';
 import { cleanContainerName } from '../utils/containerUtils';
 
@@ -140,7 +140,7 @@ export function ContainersTable({
                   Container ID
                 </TableSortLabel>
               </TableCell>
-              <TableCell>IMDS Networks</TableCell>
+              <TableCell>Providers</TableCell>
               <TableCell padding="checkbox" />
             </TableRow>
           </TableHead>
@@ -225,20 +225,35 @@ export function ContainersTable({
                     </TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                        {[...container.imdsNetworks]
-                          .sort((a, b) => a.networkName.localeCompare(b.networkName))
-                          .map((n) => {
-                            const providerLabel = n.providers.join(' / ');
-                            const tooltipText = n.connected
-                              ? `${n.providers.join(' and ')} IMDS requests are being proxied for this container.`
-                              : `${n.providers.join(' and ')} IMDS requests will not be proxied. This container is not connected to the required network.`;
+                        {[...container.providers]
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((p) => {
+                            const full = isProviderFullyConnected(p);
+                            const partial = isProviderPartiallyConnected(p);
+                            const color = full ? 'success' : partial ? 'warning' : 'error';
+                            const tooltipContent = (
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                  {p.name}
+                                </Typography>
+                                <Box component="div">
+                                  <Typography variant="caption" display="block">
+                                    {p.ipv4Connected ? '✓' : '✗'} IPv4
+                                  </Typography>
+                                  <Typography variant="caption" display="block">
+                                    {p.ipv6Connected ? '✓' : '✗'} IPv6
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            );
                             return (
-                              <Tooltip key={n.networkName} title={tooltipText}>
+                              <Tooltip key={p.name} title={tooltipContent}>
                                 <Chip
-                                  label={providerLabel}
-                                  color={n.connected ? 'success' : 'error'}
+                                  label={p.name}
+                                  color={color}
                                   size="small"
                                   variant="outlined"
+                                  tabIndex={0}
                                 />
                               </Tooltip>
                             );

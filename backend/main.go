@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -42,12 +43,10 @@ import (
 var logger = logrus.New()
 
 const (
-	imdsNetworkAWSGCP    = ".imds_aws_gcp"
-	imdsNetworkOpenStack = ".imds_openstack"
-	proxySocketPath      = "/var/run/imds-proxy/backend.sock"
-	imdsManagedLabel     = "imds-proxy.managed"
-	imdsProvidersLabel   = "imds-proxy.providers"
-	proxyContainerName   = "imds-proxy"
+	proxySocketPath    = "/var/run/imds-proxy/backend.sock"
+	imdsManagedLabel   = "imds-proxy.managed"
+	imdsProvidersLabel = "imds-proxy.providers"
+	proxyContainerName = "imds-proxy"
 )
 
 type ProxyContainerState string
@@ -81,18 +80,28 @@ type NetworkInfo struct {
 	NetworkName string `json:"networkName"`
 }
 
-type ImdsNetworkStatus struct {
-	NetworkName string   `json:"networkName"`
-	Providers   []string `json:"providers"`
-	Connected   bool     `json:"connected"`
+// ImdsNetwork is the internal representation of a managed IMDS network.
+// Providers maps provider name (e.g. "AWS") to the protocols it carries on
+// this network (e.g. ["v4", "v6"]).
+type ImdsNetwork struct {
+	NetworkName string
+	Providers   map[string][]string
+}
+
+// ProviderStatus is the per-container API representation of a cloud provider's
+// proxying state across all managed networks.
+type ProviderStatus struct {
+	Name          string `json:"name"`
+	IPv4Connected bool   `json:"ipv4Connected"`
+	IPv6Connected bool   `json:"ipv6Connected"`
 }
 
 type ContainerInfo struct {
-	ContainerID  string              `json:"containerId"`
-	Name         string              `json:"name"`
-	Labels       map[string]string   `json:"labels"`
-	Networks     []NetworkInfo       `json:"-"`
-	ImdsNetworks []ImdsNetworkStatus `json:"imdsNetworks"`
+	ContainerID string            `json:"containerId"`
+	Name        string            `json:"name"`
+	Labels      map[string]string `json:"labels"`
+	Networks    []NetworkInfo     `json:"-"`
+	Providers   []ProviderStatus  `json:"providers"`
 }
 
 type ContainersAPIResponse struct {
@@ -112,7 +121,7 @@ var (
 	ipToContainerID      = make(map[string]string)
 	ipToContainerIDMutex sync.RWMutex
 
-	managedNetworks      []ImdsNetworkStatus
+	managedNetworks      []ImdsNetwork
 	managedNetworksMutex sync.RWMutex
 
 	dockerClient DockerClient
@@ -629,12 +638,15 @@ func addContainerToTrackingWithNetwork(ctx context.Context, cli DockerClient, co
 	}
 
 	// Determine which networks need to be connected
+	managedNetworksMutex.RLock()
+	knownNetworks := managedNetworks
+	managedNetworksMutex.RUnlock()
+
 	networksToConnect := []string{}
-	if !connectedNetworks[imdsNetworkAWSGCP] {
-		networksToConnect = append(networksToConnect, imdsNetworkAWSGCP)
-	}
-	if !connectedNetworks[imdsNetworkOpenStack] {
-		networksToConnect = append(networksToConnect, imdsNetworkOpenStack)
+	for _, mn := range knownNetworks {
+		if !connectedNetworks[mn.NetworkName] {
+			networksToConnect = append(networksToConnect, mn.NetworkName)
+		}
 	}
 
 	// Connect to IMDS networks if needed
@@ -746,6 +758,80 @@ func refreshContainerNetworks(ctx context.Context, cli DockerClient, containerID
 	return nil
 }
 
+// parseProviderLabel parses the imds-proxy.providers label value into a map
+// of provider name to the protocols it carries on that network.
+// Format: "AWS=v4,v6;GCP=v4,v6;OpenStack=v4"
+func parseProviderLabel(s string) map[string][]string {
+	result := make(map[string][]string)
+	for _, entry := range strings.Split(s, ";") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		protos := []string{}
+		for _, p := range strings.Split(parts[1], ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				protos = append(protos, p)
+			}
+		}
+		if name != "" {
+			result[name] = protos
+		}
+	}
+	return result
+}
+
+// buildProviderStatuses aggregates per-provider connectivity across all managed
+// networks, given the set of networks the container is currently connected to.
+func buildProviderStatuses(containerNetworks []NetworkInfo, managedNets []ImdsNetwork) []ProviderStatus {
+	connectedNames := make(map[string]bool, len(containerNetworks))
+	for _, n := range containerNetworks {
+		connectedNames[n.NetworkName] = true
+	}
+
+	// Collect which protocols are connected per provider
+	connectedProtos := make(map[string]map[string]bool)
+	// Track all known provider names (to include disconnected ones)
+	allProviders := make(map[string]bool)
+
+	for _, mn := range managedNets {
+		connected := connectedNames[mn.NetworkName]
+		for provider, protos := range mn.Providers {
+			allProviders[provider] = true
+			if connected {
+				if connectedProtos[provider] == nil {
+					connectedProtos[provider] = make(map[string]bool)
+				}
+				for _, proto := range protos {
+					connectedProtos[provider][proto] = true
+				}
+			}
+		}
+	}
+
+	names := make([]string, 0, len(allProviders))
+	for name := range allProviders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	statuses := make([]ProviderStatus, 0, len(names))
+	for _, name := range names {
+		statuses = append(statuses, ProviderStatus{
+			Name:          name,
+			IPv4Connected: connectedProtos[name]["v4"],
+			IPv6Connected: connectedProtos[name]["v6"],
+		})
+	}
+	return statuses
+}
+
 func discoverManagedNetworks(ctx context.Context, cli DockerClient) error {
 	networkList, err := cli.NetworkList(ctx, network.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("label", imdsManagedLabel+"=true")),
@@ -754,17 +840,11 @@ func discoverManagedNetworks(ctx context.Context, cli DockerClient) error {
 		return err
 	}
 
-	discovered := make([]ImdsNetworkStatus, 0, len(networkList))
+	discovered := make([]ImdsNetwork, 0, len(networkList))
 	for _, n := range networkList {
-		providers := []string{}
-		if p := n.Labels[imdsProvidersLabel]; p != "" {
-			for _, provider := range strings.Split(p, ",") {
-				providers = append(providers, strings.TrimSpace(provider))
-			}
-		}
-		discovered = append(discovered, ImdsNetworkStatus{
+		discovered = append(discovered, ImdsNetwork{
 			NetworkName: n.Name,
-			Providers:   providers,
+			Providers:   parseProviderLabel(n.Labels[imdsProvidersLabel]),
 		})
 	}
 
@@ -786,19 +866,7 @@ func getContainers(ctx echo.Context) error {
 
 	containerList := make([]ContainerInfo, 0, len(trackedContainers))
 	for _, info := range trackedContainers {
-		connectedNames := make(map[string]bool, len(info.Networks))
-		for _, n := range info.Networks {
-			connectedNames[n.NetworkName] = true
-		}
-		imdsNetworks := make([]ImdsNetworkStatus, 0, len(networks))
-		for _, mn := range networks {
-			imdsNetworks = append(imdsNetworks, ImdsNetworkStatus{
-				NetworkName: mn.NetworkName,
-				Providers:   mn.Providers,
-				Connected:   connectedNames[mn.NetworkName],
-			})
-		}
-		info.ImdsNetworks = imdsNetworks
+		info.Providers = buildProviderStatuses(info.Networks, networks)
 		containerList = append(containerList, info)
 	}
 

@@ -13,12 +13,12 @@
 // limitations under the License.
 
 /**
- * Status of a Barnacle-managed IMDS network for a container
+ * Per-provider IMDS proxying status for a container
  */
-export interface ImdsNetworkStatus {
-  networkName: string;
-  providers: string[];
-  connected: boolean;
+export interface ProviderStatus {
+  name: string;
+  ipv4Connected: boolean;
+  ipv6Connected: boolean;
 }
 
 /**
@@ -28,7 +28,7 @@ export interface ContainerInfo {
   containerId: string;
   name: string;
   labels: Record<string, string>;
-  imdsNetworks: ImdsNetworkStatus[];
+  providers: ProviderStatus[];
 }
 
 /**
@@ -68,3 +68,15 @@ export const isContainersResponse = (value: unknown): value is ContainersRespons
   const v = value as Record<string, unknown>;
   return Array.isArray(v.containers) && typeof v.proxyStatus === 'string';
 };
+
+/**
+ * Returns true if the provider has full proxying (both IPv4 and IPv6)
+ */
+export const isProviderFullyConnected = (p: ProviderStatus): boolean =>
+  p.ipv4Connected && p.ipv6Connected;
+
+/**
+ * Returns true if the provider has partial proxying (one of IPv4/IPv6)
+ */
+export const isProviderPartiallyConnected = (p: ProviderStatus): boolean =>
+  p.ipv4Connected !== p.ipv6Connected;

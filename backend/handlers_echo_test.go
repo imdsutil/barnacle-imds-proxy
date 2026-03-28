@@ -198,12 +198,12 @@ func TestGetContainersWithData(t *testing.T) {
 		ContainerID: "abc",
 		Name:        "/test",
 		Labels:      map[string]string{},
-		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net1"}},
+		Networks:    []NetworkInfo{{NetworkName: ".imds-0", NetworkID: "net1"}},
 	}
 	trackedContainersMutex.Unlock()
 
 	managedNetworksMutex.Lock()
-	managedNetworks = []ImdsNetworkStatus{{NetworkName: ".imds_aws_gcp", Providers: []string{"AWS", "GCP"}}}
+	managedNetworks = []ImdsNetwork{{NetworkName: ".imds-0", Providers: map[string][]string{"AWS": {"v4", "v6"}, "GCP": {"v4", "v6"}}}}
 	managedNetworksMutex.Unlock()
 	t.Cleanup(func() {
 		managedNetworksMutex.Lock()
@@ -231,11 +231,17 @@ func TestGetContainersWithData(t *testing.T) {
 	if len(result.Containers) != 1 {
 		t.Fatalf("want 1 container, got %d", len(result.Containers))
 	}
-	if len(result.Containers[0].ImdsNetworks) != 1 {
-		t.Fatalf("want 1 imds network, got %d", len(result.Containers[0].ImdsNetworks))
+	if len(result.Containers[0].Providers) != 2 {
+		t.Fatalf("want 2 providers (AWS, GCP), got %d", len(result.Containers[0].Providers))
 	}
-	if !result.Containers[0].ImdsNetworks[0].Connected {
-		t.Errorf("want ImdsNetworks[0].Connected=true for .imds_aws_gcp")
+	awsConnected := false
+	for _, p := range result.Containers[0].Providers {
+		if p.Name == "AWS" && p.IPv4Connected && p.IPv6Connected {
+			awsConnected = true
+		}
+	}
+	if !awsConnected {
+		t.Errorf("want AWS provider with IPv4+IPv6 connected for .imds-0")
 	}
 }
 
