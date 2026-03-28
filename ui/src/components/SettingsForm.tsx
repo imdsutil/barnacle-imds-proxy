@@ -44,6 +44,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [isDebouncing, setIsDebouncing] = useState(false);
+  const [hasBeenSaved, setHasBeenSaved] = useState(false);
 
   // Track mount status to prevent state updates after unmount during async settings load
   const isMountedRef = useRef(false);
@@ -125,6 +126,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
       // Update saved state to disable button
       setSavedUrl(url);
+      setHasBeenSaved(true);
       showSnackbar('Settings saved', 'success');
 
       // Disable save button to prevent rapid re-submission
@@ -174,6 +176,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
             onChange={(e) => {
               setUrl(e.target.value);
               setUrlError('');
+              setHasBeenSaved(false);
             }}
             variant="outlined"
             size="small"
@@ -188,7 +191,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
             disabled={isSaving || url === savedUrl || isDebouncing || proxyUnreachable}
             sx={{ alignSelf: 'flex-start' }}
           >
-            {isSaving ? 'Saving...' : url === savedUrl && savedUrl !== '' ? 'Saved' : 'Save Settings'}
+            {isSaving ? 'Saving...' : hasBeenSaved ? 'Saved' : 'Save Settings'}
           </Button>
         </>
       )}
