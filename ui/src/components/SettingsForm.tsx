@@ -39,11 +39,12 @@ interface SettingsFormProps {
 
 export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable, onProxyHelp }: SettingsFormProps) {
   const [url, setUrl] = useState('');
-  const [urlError, setUrlError] = useState(false);
+  const [urlError, setUrlError] = useState('');
   const [savedUrl, setSavedUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [isDebouncing, setIsDebouncing] = useState(false);
+  const [hasBeenSaved, setHasBeenSaved] = useState(false);
 
   // Track mount status to prevent state updates after unmount during async settings load
   const isMountedRef = useRef(false);
@@ -93,16 +94,20 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
   const handleSave = async () => {
     // Reset errors
-    setUrlError(false);
+    setUrlError('');
 
     if (!ddClient) {
       showSnackbar('Docker Desktop client unavailable', 'error');
       return;
     }
 
-    // Validate that URL is filled
+    // Validate URL
     if (!url) {
-      setUrlError(true);
+      setUrlError('URL is required');
+      return;
+    }
+    if (!/^https?:\/\/[^/\\]/.test(url)) {
+      setUrlError('Enter a valid URL (e.g. http://localhost:8080)');
       return;
     }
 
@@ -121,6 +126,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
       // Update saved state to disable button
       setSavedUrl(url);
+      setHasBeenSaved(true);
       showSnackbar('Settings saved', 'success');
 
       // Disable save button to prevent rapid re-submission
@@ -169,12 +175,13 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
-              setUrlError(false);
+              setUrlError('');
+              setHasBeenSaved(false);
             }}
             variant="outlined"
             size="small"
-            error={urlError}
-            helperText={urlError ? 'URL is required' : 'Examples: http://localhost:8080, https://api.example.com'}
+            error={!!urlError}
+            helperText={urlError || 'Examples: http://localhost:8080, https://api.example.com'}
             fullWidth
             spellCheck={false}
           />
@@ -184,7 +191,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
             disabled={isSaving || url === savedUrl || isDebouncing || proxyUnreachable}
             sx={{ alignSelf: 'flex-start' }}
           >
-            {isSaving ? 'Saving...' : url === savedUrl && savedUrl !== '' ? 'Saved' : 'Save Settings'}
+            {isSaving ? 'Saving...' : hasBeenSaved ? 'Saved' : 'Save Settings'}
           </Button>
         </>
       )}

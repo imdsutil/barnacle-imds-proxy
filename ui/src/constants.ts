@@ -28,9 +28,10 @@ export const SAVE_DEBOUNCE_MS = 1000;
 export const CONTAINER_ID_DISPLAY_LENGTH = 12;
 
 /**
- * How long to show snackbar notifications before auto-hiding (in milliseconds)
+ * How long to show success snackbar notifications before auto-hiding (in milliseconds).
+ * Error notifications use autoHideDuration={null} and require manual dismissal.
  */
-export const SNACKBAR_AUTO_HIDE_DURATION_MS = 6000;
+export const SNACKBAR_SUCCESS_DURATION_MS = 3000;
 
 /**
  * GitHub repository URL for documentation

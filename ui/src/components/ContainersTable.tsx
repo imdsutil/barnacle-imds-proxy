@@ -34,6 +34,7 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import Link from '@mui/material/Link';
 import { ContainerInfo } from '../types';
 import { CONTAINER_ID_DISPLAY_LENGTH } from '../constants';
 import { cleanContainerName } from '../utils/containerUtils';
@@ -137,8 +138,10 @@ export function ContainersTable({
                     onClick={() => handleRowClick(container.containerId)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleRowClick(container.containerId);
+                        if (event.target === event.currentTarget) {
+                          event.preventDefault();
+                          handleRowClick(container.containerId);
+                        }
                       }
                     }}
                     tabIndex={0}
@@ -254,13 +257,13 @@ export function ContainersTable({
                                     sx={{
                                       fontFamily: 'monospace',
                                       color: 'text.secondary',
-                                      minWidth: 240,
-                                      flexShrink: 0,
+                                      minWidth: 160,
+                                      wordBreak: 'break-all',
                                     }}
                                   >
                                     {key}
                                   </Typography>
-                                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
                                     {value}
                                   </Typography>
                                 </Stack>
@@ -289,14 +292,16 @@ export function ContainersTable({
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5 }}>
         <Box>
           {proxyUnreachable && (
-            <Typography
+            <Link
+              component="button"
               variant="body2"
               color="error"
               onClick={onProxyHelp}
-              sx={{ cursor: onProxyHelp ? 'pointer' : 'default', textDecoration: onProxyHelp ? 'underline' : 'none' }}
+              disabled={!onProxyHelp}
+              sx={{ textDecoration: 'underline' }}
             >
               Extension backend not responding — list may be outdated
-            </Typography>
+            </Link>
           )}
         </Box>
         <Typography variant="body2" color="text.secondary">

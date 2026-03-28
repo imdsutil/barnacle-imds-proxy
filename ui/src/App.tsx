@@ -18,7 +18,7 @@ import { useDockerDesktopService } from './services/dockerDesktopService';
 import logo from './logo.svg';
 import {
   CONTAINER_POLL_INTERVAL_MS,
-  SNACKBAR_AUTO_HIDE_DURATION_MS,
+  SNACKBAR_SUCCESS_DURATION_MS,
   GITHUB_REPO_URL,
   IMDS_PROXY_ENABLED_LABEL,
   BACKEND_REQUEST_TIMEOUT_MS,
@@ -333,7 +333,7 @@ export function App() {
 
       <Snackbar
         open={snackbarOpen}
-        autoHideDuration={SNACKBAR_AUTO_HIDE_DURATION_MS}
+        autoHideDuration={snackbarSeverity === 'success' ? SNACKBAR_SUCCESS_DURATION_MS : null}
         onClose={handleSnackbarClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

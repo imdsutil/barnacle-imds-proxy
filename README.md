@@ -62,6 +62,10 @@ When a labeled container starts, the controller pauses it briefly, attaches it t
 
 See [DEVELOPMENT.md](DEVELOPMENT.md).
 
+## Accessibility
+
+The extension UI targets [WCAG 2.1 Level AA](https://www.w3.org/TR/WCAG21/) conformance. To report an accessibility issue, please [open a GitHub issue](https://github.com/imdsutil/barnacle-imds-proxy/issues).
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
