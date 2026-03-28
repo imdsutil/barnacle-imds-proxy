@@ -19,18 +19,20 @@ import (
 	"errors"
 	"testing"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 )
 
-func proxyContainer(state string) container.Summary {
-	return container.Summary{
-		Names: []string{"/" + proxyContainerName},
-		State: state,
+func proxyInspect(status string) container.InspectResponse {
+	return container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			State: &container.State{Status: status},
+		},
 	}
 }
 
 func TestQueryProxyContainerStateRunning(t *testing.T) {
-	cli := &fakeDockerClient{containerList: []container.Summary{proxyContainer("running")}}
+	cli := &fakeDockerClient{inspectSequence: []container.InspectResponse{proxyInspect("running")}}
 	got := queryProxyContainerState(context.Background(), cli)
 	if got != ProxyStateRunning {
 		t.Errorf("want %q, got %q", ProxyStateRunning, got)
@@ -38,7 +40,7 @@ func TestQueryProxyContainerStateRunning(t *testing.T) {
 }
 
 func TestQueryProxyContainerStatePaused(t *testing.T) {
-	cli := &fakeDockerClient{containerList: []container.Summary{proxyContainer("paused")}}
+	cli := &fakeDockerClient{inspectSequence: []container.InspectResponse{proxyInspect("paused")}}
 	got := queryProxyContainerState(context.Background(), cli)
 	if got != ProxyStatePaused {
 		t.Errorf("want %q, got %q", ProxyStatePaused, got)
@@ -46,7 +48,7 @@ func TestQueryProxyContainerStatePaused(t *testing.T) {
 }
 
 func TestQueryProxyContainerStateDead(t *testing.T) {
-	cli := &fakeDockerClient{containerList: []container.Summary{proxyContainer("dead")}}
+	cli := &fakeDockerClient{inspectSequence: []container.InspectResponse{proxyInspect("dead")}}
 	got := queryProxyContainerState(context.Background(), cli)
 	if got != ProxyStateFailed {
 		t.Errorf("want %q, got %q", ProxyStateFailed, got)
@@ -54,7 +56,7 @@ func TestQueryProxyContainerStateDead(t *testing.T) {
 }
 
 func TestQueryProxyContainerStateExited(t *testing.T) {
-	cli := &fakeDockerClient{containerList: []container.Summary{proxyContainer("exited")}}
+	cli := &fakeDockerClient{inspectSequence: []container.InspectResponse{proxyInspect("exited")}}
 	got := queryProxyContainerState(context.Background(), cli)
 	if got != ProxyStateStopped {
 		t.Errorf("want %q, got %q", ProxyStateStopped, got)
@@ -62,26 +64,17 @@ func TestQueryProxyContainerStateExited(t *testing.T) {
 }
 
 func TestQueryProxyContainerStateMissing(t *testing.T) {
-	cli := &fakeDockerClient{containerList: []container.Summary{}}
+	cli := &fakeDockerClient{inspectErr: cerrdefs.ErrNotFound}
 	got := queryProxyContainerState(context.Background(), cli)
 	if got != ProxyStateMissing {
 		t.Errorf("want %q, got %q", ProxyStateMissing, got)
 	}
 }
 
-func TestQueryProxyContainerStateListError(t *testing.T) {
-	cli := &fakeDockerClient{containerListErr: errors.New("docker unavailable")}
+func TestQueryProxyContainerStateInspectError(t *testing.T) {
+	cli := &fakeDockerClient{inspectErr: errors.New("docker unavailable")}
 	got := queryProxyContainerState(context.Background(), cli)
 	if got != ProxyStateMissing {
 		t.Errorf("want %q on error, got %q", ProxyStateMissing, got)
-	}
-}
-
-func TestQueryProxyContainerStateIgnoresOtherContainers(t *testing.T) {
-	other := container.Summary{Names: []string{"/some-other-container"}, State: "running"}
-	cli := &fakeDockerClient{containerList: []container.Summary{other}}
-	got := queryProxyContainerState(context.Background(), cli)
-	if got != ProxyStateMissing {
-		t.Errorf("want %q for unrelated container, got %q", ProxyStateMissing, got)
 	}
 }
