@@ -237,7 +237,7 @@ describe('ContainersTable', () => {
     expect(screen.getByText('No labels')).toBeDefined();
   });
 
-  it('shows proxy unreachable link and calls onProxyHelp when clicked', () => {
+  it('shows proxy unreachable alert and calls onProxyHelp when Get help is clicked', () => {
     const mockCallback = vi.fn();
     const onProxyHelp = vi.fn();
     render(
@@ -250,9 +250,8 @@ describe('ContainersTable', () => {
       />
     );
 
-    const link = screen.getByText(/Extension backend not responding/i);
-    expect(link).toBeDefined();
-    fireEvent.click(link);
+    expect(screen.getByText(/Extension backend not responding/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /get help/i }));
     expect(onProxyHelp).toHaveBeenCalled();
   });
 

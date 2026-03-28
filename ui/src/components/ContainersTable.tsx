@@ -30,11 +30,12 @@ import {
   Collapse,
   Box,
   Skeleton,
+  Alert,
+  Button,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import Link from '@mui/material/Link';
 import { ContainerInfo, isProviderFullyConnected, isProviderPartiallyConnected } from '../types';
 import { CONTAINER_ID_DISPLAY_LENGTH } from '../constants';
 import { cleanContainerName } from '../utils/containerUtils';
@@ -322,24 +323,25 @@ export function ContainersTable({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <Typography variant="subtitle1" sx={{ mb: 1 }}>Enabled for these containers</Typography>
+      {proxyUnreachable && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 1, alignItems: 'center' }}
+          action={
+            onProxyHelp && (
+              <Button color="inherit" size="small" onClick={onProxyHelp}>
+                Get help
+              </Button>
+            )
+          }
+        >
+          Extension backend not responding — list may be outdated.
+        </Alert>
+      )}
       <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {renderContent()}
       </Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5 }}>
-        <Box>
-          {proxyUnreachable && (
-            <Link
-              component="button"
-              variant="body2"
-              color="error"
-              onClick={onProxyHelp}
-              disabled={!onProxyHelp}
-              sx={{ textDecoration: 'underline' }}
-            >
-              Extension backend not responding — list may be outdated
-            </Link>
-          )}
-        </Box>
+      <Stack direction="row" justifyContent="flex-end" alignItems="center" sx={{ mt: 0.5 }}>
         <Typography variant="body2" color="text.secondary">
           Showing {containers.length} {containers.length === 1 ? 'item' : 'items'}
         </Typography>

@@ -167,6 +167,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
       {proxyUnreachable && (
         <Alert
           severity="warning"
+          sx={{ alignItems: 'center' }}
           action={
             onProxyHelp && (
               <Button color="inherit" size="small" onClick={onProxyHelp}>
