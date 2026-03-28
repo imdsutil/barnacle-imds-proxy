@@ -141,7 +141,7 @@ func TestContainerLifecycleIntegration(t *testing.T) {
 		},
 		NetworkSettings: &container.NetworkSettings{
 			Networks: map[string]*network.EndpointSettings{
-				imdsNetworkAWSGCP: {
+				".imds-0": {
 					NetworkID: testNetworkID,
 					IPAddress: testIP,
 				},

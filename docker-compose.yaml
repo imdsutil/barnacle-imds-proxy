@@ -22,12 +22,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      # Connects to the AWS/GCP dual-stack network
-      imds_aws_gcp:
+      # IPv4 + EC2 IPv6 IMDS addresses (AWS, GCP, OpenStack v4)
+      imds_0:
         ipv4_address: 169.254.169.254
         ipv6_address: "fd00:ec2::254"
-      # Connects to the OpenStack IPv6-only network
-      imds_openstack:
+      # OpenStack IPv6 IMDS address
+      imds_1:
         ipv6_address: "fd00:a9fe:a9fe::254"
     volumes:
       # So we can communicate with the controller
@@ -40,27 +40,27 @@ volumes:
   imds-proxy-sockets:
 
 networks:
-  # Network 1: Handles IPv4 IMDS and standard EC2/GCP IPv6 IMDS ranges
-  imds_aws_gcp:
-    name: ".imds_aws_gcp"
+  # Network 0: IPv4 IMDS (169.254.169.254) + EC2 IPv6 (fd00:ec2::254)
+  imds_0:
+    name: ".imds-0"
     driver: bridge
     enable_ipv6: true
     labels:
       imds-proxy.managed: "true"
-      imds-proxy.providers: "AWS,GCP"
+      imds-proxy.providers: "AWS=v4,v6;GCP=v4,v6;OpenStack=v4"
     ipam:
       config:
         - subnet: 169.254.169.0/24
         - subnet: "fd00:ec2::/64"
 
-  # Network 2: Dedicated to the OpenStack IPv6 metadata range
-  imds_openstack:
-    name: ".imds_openstack"
+  # Network 1: OpenStack IPv6 IMDS address (fd00:a9fe:a9fe::254)
+  imds_1:
+    name: ".imds-1"
     driver: bridge
     enable_ipv6: true
     labels:
       imds-proxy.managed: "true"
-      imds-proxy.providers: "OpenStack"
+      imds-proxy.providers: "OpenStack=v6"
     ipam:
       config:
         - subnet: "fd00:a9fe:a9fe::/64"

@@ -144,6 +144,18 @@ func TestAddAndRemoveContainerTracking(t *testing.T) {
 	resetTracking()
 	defer resetTracking()
 
+	managedNetworksMutex.Lock()
+	managedNetworks = []ImdsNetwork{
+		{NetworkName: ".imds-0", Providers: map[string][]string{"AWS": {"v4", "v6"}}},
+		{NetworkName: ".imds-1", Providers: map[string][]string{"OpenStack": {"v6"}}},
+	}
+	managedNetworksMutex.Unlock()
+	defer func() {
+		managedNetworksMutex.Lock()
+		managedNetworks = nil
+		managedNetworksMutex.Unlock()
+	}()
+
 	containerID := "abc123"
 	inspectInitial := container.InspectResponse{
 		ContainerJSONBase: &container.ContainerJSONBase{
@@ -169,10 +181,10 @@ func TestAddAndRemoveContainerTracking(t *testing.T) {
 		Config: &container.Config{Labels: map[string]string{}},
 		NetworkSettings: &container.NetworkSettings{
 			Networks: map[string]*network.EndpointSettings{
-				imdsNetworkAWSGCP: {
+				".imds-0": {
 					NetworkID: "net-aws",
 				},
-				imdsNetworkOpenStack: {
+				".imds-1": {
 					NetworkID: "net-os",
 				},
 			},
@@ -227,6 +239,17 @@ func TestAddContainerToTrackingWithNetworkPauseFirst(t *testing.T) {
 	resetTracking()
 	defer resetTracking()
 
+	managedNetworksMutex.Lock()
+	managedNetworks = []ImdsNetwork{
+		{NetworkName: ".imds-0", Providers: map[string][]string{"AWS": {"v4", "v6"}}},
+	}
+	managedNetworksMutex.Unlock()
+	defer func() {
+		managedNetworksMutex.Lock()
+		managedNetworks = nil
+		managedNetworksMutex.Unlock()
+	}()
+
 	containerID := "pause-test-abc"
 	inspectInitial := container.InspectResponse{
 		ContainerJSONBase: &container.ContainerJSONBase{
@@ -252,7 +275,7 @@ func TestAddContainerToTrackingWithNetworkPauseFirst(t *testing.T) {
 		Config: &container.Config{Labels: map[string]string{}},
 		NetworkSettings: &container.NetworkSettings{
 			Networks: map[string]*network.EndpointSettings{
-				imdsNetworkAWSGCP: {NetworkID: "net-aws"},
+				".imds-0": {NetworkID: "net-aws"},
 			},
 		},
 	}
@@ -1016,7 +1039,7 @@ func TestScanExistingContainersLabeledContainer(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{"imds-proxy.enabled": "true"}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{
-						".imds_aws_gcp": {NetworkID: "net1"},
+						".imds-0": {NetworkID: "net1"},
 					},
 				},
 			},
@@ -1029,8 +1052,8 @@ func TestScanExistingContainersLabeledContainer(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{"imds-proxy.enabled": "true"}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{
-						".imds_aws_gcp":   {NetworkID: "net1"},
-						".imds_openstack": {NetworkID: "net2"},
+						".imds-0":   {NetworkID: "net1"},
+						".imds-1": {NetworkID: "net2"},
 					},
 				},
 			},
@@ -1113,10 +1136,10 @@ func TestDiscoverManagedNetworksWithProviders(t *testing.T) {
 	cli := &fakeDockerClient{
 		networkList: []network.Summary{
 			{
-				Name: ".imds_aws_gcp",
+				Name: ".imds-0",
 				Labels: map[string]string{
 					"imds-proxy.managed":   "true",
-					"imds-proxy.providers": "AWS,GCP",
+					"imds-proxy.providers": "AWS=v4,v6;GCP=v4,v6;OpenStack=v4",
 				},
 			},
 		},
@@ -1133,14 +1156,19 @@ func TestDiscoverManagedNetworksWithProviders(t *testing.T) {
 	if len(nets) != 1 {
 		t.Fatalf("want 1 managed network, got %d", len(nets))
 	}
-	if nets[0].NetworkName != ".imds_aws_gcp" {
-		t.Errorf("want network name .imds_aws_gcp, got %s", nets[0].NetworkName)
+	if nets[0].NetworkName != ".imds-0" {
+		t.Errorf("want network name .imds-0, got %s", nets[0].NetworkName)
 	}
-	if len(nets[0].Providers) != 2 {
-		t.Fatalf("want 2 providers, got %d", len(nets[0].Providers))
+	if len(nets[0].Providers) != 3 {
+		t.Fatalf("want 3 providers, got %d", len(nets[0].Providers))
 	}
-	if nets[0].Providers[0] != "AWS" || nets[0].Providers[1] != "GCP" {
-		t.Errorf("want providers [AWS GCP], got %v", nets[0].Providers)
+	for _, name := range []string{"AWS", "GCP", "OpenStack"} {
+		if _, ok := nets[0].Providers[name]; !ok {
+			t.Errorf("want provider %s in Providers map, got %v", name, nets[0].Providers)
+		}
+	}
+	if got := nets[0].Providers["AWS"]; len(got) != 2 || got[0] != "v4" || got[1] != "v6" {
+		t.Errorf("want AWS=[v4 v6], got %v", got)
 	}
 }
 
@@ -1181,7 +1209,7 @@ func TestRefreshContainerNetworksTracked(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{
-						".imds_aws_gcp": {NetworkID: "updated-net1"},
+						".imds-0": {NetworkID: "updated-net1"},
 					},
 				},
 			},
@@ -1252,7 +1280,7 @@ func TestFindContainerByIPFound(t *testing.T) {
 		ContainerID: containerID,
 		Name:        "/ip-test",
 		Labels:      map[string]string{"app": "test"},
-		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net-x"}},
+		Networks:    []NetworkInfo{{NetworkName: ".imds-0", NetworkID: "net-x"}},
 	}
 	trackedContainersMutex.Unlock()
 
@@ -1267,7 +1295,7 @@ func TestFindContainerByIPFound(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{"app": "test"}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{
-						".imds_aws_gcp": {NetworkID: "net-x", IPAddress: "10.5.0.42"},
+						".imds-0": {NetworkID: "net-x", IPAddress: "10.5.0.42"},
 					},
 				},
 			},
@@ -1296,7 +1324,7 @@ func TestFindContainerByIPNotFound(t *testing.T) {
 		ContainerID: containerID,
 		Name:        "/no-ip",
 		Labels:      map[string]string{},
-		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net-y"}},
+		Networks:    []NetworkInfo{{NetworkName: ".imds-0", NetworkID: "net-y"}},
 	}
 	trackedContainersMutex.Unlock()
 
@@ -1311,7 +1339,7 @@ func TestFindContainerByIPNotFound(t *testing.T) {
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
 					Networks: map[string]*network.EndpointSettings{
-						".imds_aws_gcp": {NetworkID: "net-y", IPAddress: "10.5.0.1"},
+						".imds-0": {NetworkID: "net-y", IPAddress: "10.5.0.1"},
 					},
 				},
 			},
@@ -1337,7 +1365,7 @@ func TestFindContainerByIPInspectError(t *testing.T) {
 		ContainerID: containerID,
 		Name:        "/err-container",
 		Labels:      map[string]string{},
-		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net-z"}},
+		Networks:    []NetworkInfo{{NetworkName: ".imds-0", NetworkID: "net-z"}},
 	}
 	trackedContainersMutex.Unlock()
 
