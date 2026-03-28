@@ -63,6 +63,8 @@ docker exec <container-name> wget -qO- --timeout=5 http://169.254.169.254/
 
 If that times out but the container is attached to the IMDS network, the proxy may not be running.
 
+**Check your server is listening on `0.0.0.0`.** The proxy forwards requests from inside the Docker Desktop VM using `host.docker.internal`. If your server is bound to `127.0.0.1` only, those connections will be refused. Make sure it listens on `0.0.0.0`.
+
 ---
 
 ## Provider pills are yellow or red
@@ -78,14 +80,6 @@ docker network ls | grep imds
 ```
 
 You should see two networks with names ending in `.imds-0` and `.imds-1`. If they're missing, reinstalling the extension will recreate them.
-
----
-
-## Requests never reach my server even though the proxy is running
-
-If you set the URL to `http://localhost:8080`, the proxy rewrites it to `http://host.docker.internal:8080` before forwarding. Inside the Docker Desktop VM, `localhost` refers to the VM itself, not your host machine, so the rewrite is necessary.
-
-For `host.docker.internal` to reach your server, the server must listen on `0.0.0.0`, not just `127.0.0.1`. If it's bound to loopback only, connections from the VM will be refused.
 
 ---
 
