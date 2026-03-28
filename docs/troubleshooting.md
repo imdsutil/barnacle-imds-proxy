@@ -81,11 +81,11 @@ You should see two networks with names ending in `.imds-0` and `.imds-1`. If the
 
 ---
 
-## My server receives requests but the wrong URL
+## Requests never reach my server even though the proxy is running
 
-If you set the URL to `http://localhost:8080`, the proxy rewrites it to `http://host.docker.internal:8080` before forwarding. This is expected. Inside the Docker Desktop VM, `localhost` refers to the VM, not your host machine. The rewrite makes it reach your host.
+If you set the URL to `http://localhost:8080`, the proxy rewrites it to `http://host.docker.internal:8080` before forwarding. Inside the Docker Desktop VM, `localhost` refers to the VM itself, not your host machine, so the rewrite is necessary.
 
-If your server is bound to `127.0.0.1` only (not `0.0.0.0`), it won't accept connections from `host.docker.internal`. Make sure your server listens on `0.0.0.0`.
+For `host.docker.internal` to reach your server, the server must listen on `0.0.0.0`, not just `127.0.0.1`. If it's bound to loopback only, connections from the VM will be refused.
 
 ---
 
