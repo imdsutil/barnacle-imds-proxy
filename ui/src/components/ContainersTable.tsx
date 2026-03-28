@@ -96,6 +96,27 @@ export function ContainersTable({
       );
     }
 
+    if (!isLoading && containers.length === 0) {
+      return (
+        <Box
+          sx={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            py: 4,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            No labeled containers are running.
+          </Typography>
+        </Box>
+      );
+    }
+
     return (
       <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, overflow: 'auto' }}>
         <Table size="small" stickyHeader>
