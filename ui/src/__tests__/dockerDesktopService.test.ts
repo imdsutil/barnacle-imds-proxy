@@ -75,11 +75,33 @@ describe('Docker Desktop Service', () => {
     expect(mockGet).toHaveBeenCalledWith('/containers');
   });
 
+  it('should call service.get with correct path for getComposeProjectName', async () => {
+    const mockResponse = { projectName: 'my-project', configFiles: '/path/to/compose.yaml' };
+    const mockGet = vi.fn().mockResolvedValue(mockResponse);
+    const mockClient = {
+      extension: {
+        vm: {
+          service: {
+            get: mockGet,
+          },
+        },
+      },
+    };
+
+    const { result } = renderHook(() => useDockerDesktopService(mockClient as any));
+    const response = await result.current.getComposeProjectName();
+
+    expect(mockGet).toHaveBeenCalledWith('/compose-project-name');
+    expect(response.projectName).toBe('my-project');
+    expect(response.configFiles).toBe('/path/to/compose.yaml');
+  });
+
   it('should throw error when client is not available', async () => {
     const { result } = renderHook(() => useDockerDesktopService(null));
 
     await expect(result.current.getSettings()).rejects.toThrow('Docker Desktop client not available');
     await expect(result.current.getContainers()).rejects.toThrow('Docker Desktop client not available');
+    await expect(result.current.getComposeProjectName()).rejects.toThrow('Docker Desktop client not available');
   });
 
   it('should propagate errors from underlying service calls', async () => {
@@ -102,7 +124,8 @@ describe('Docker Desktop Service', () => {
 
   describe('Edge Cases', () => {
     it('should handle empty containers array', async () => {
-      const mockGet = vi.fn().mockResolvedValue([]);
+      const mockResponse = { containers: [], proxyStatus: 'running' };
+      const mockGet = vi.fn().mockResolvedValue(mockResponse);
       const mockClient = {
         extension: {
           vm: {
@@ -114,9 +137,10 @@ describe('Docker Desktop Service', () => {
       };
 
       const { result } = renderHook(() => useDockerDesktopService(mockClient as any));
-      const containers = await result.current.getContainers();
+      const response = await result.current.getContainers();
 
-      expect(containers).toEqual([]);
+      expect(response.containers).toEqual([]);
+      expect(response.proxyStatus).toBe('running');
     });
 
     it('should handle null response from backend', async () => {
@@ -159,7 +183,7 @@ describe('Docker Desktop Service', () => {
         },
       ];
 
-      const mockGet = vi.fn().mockResolvedValue(unicodeContainers);
+      const mockGet = vi.fn().mockResolvedValue({ containers: unicodeContainers, proxyStatus: 'running' });
       const mockClient = {
         extension: {
           vm: {
@@ -171,24 +195,20 @@ describe('Docker Desktop Service', () => {
       };
 
       const { result } = renderHook(() => useDockerDesktopService(mockClient as any));
-      const containers = await result.current.getContainers();
+      const response = await result.current.getContainers();
 
-      expect(containers).toEqual(unicodeContainers);
-      expect(containers[0].name).toBe('/🐳-docker-container');
-      expect(containers[1].name).toBe('/容器-测试');
-      expect(containers[2].name).toBe('/test-🚀-подтест-测试');
+      expect(response.containers).toEqual(unicodeContainers);
+      expect(response.containers[0].name).toBe('/🐳-docker-container');
+      expect(response.containers[1].name).toBe('/容器-测试');
+      expect(response.containers[2].name).toBe('/test-🚀-подтест-测试');
     });
 
     it('should handle very long container IDs', async () => {
       const longId = 'a'.repeat(512);
-      const mockGet = vi.fn().mockResolvedValue([
-        {
-          containerId: longId,
-          name: '/test-long-id',
-          labels: {},
-          networks: [],
-        },
-      ]);
+      const mockGet = vi.fn().mockResolvedValue({
+        containers: [{ containerId: longId, name: '/test-long-id', labels: {}, networks: [] }],
+        proxyStatus: 'running',
+      });
       const mockClient = {
         extension: {
           vm: {
@@ -200,10 +220,10 @@ describe('Docker Desktop Service', () => {
       };
 
       const { result } = renderHook(() => useDockerDesktopService(mockClient as any));
-      const containers = await result.current.getContainers();
+      const response = await result.current.getContainers();
 
-      expect(containers[0].containerId).toBe(longId);
-      expect(containers[0].containerId.length).toBe(512);
+      expect(response.containers[0].containerId).toBe(longId);
+      expect(response.containers[0].containerId.length).toBe(512);
     });
 
     it('should handle containers with missing optional fields', async () => {
@@ -215,7 +235,7 @@ describe('Docker Desktop Service', () => {
         },
       ];
 
-      const mockGet = vi.fn().mockResolvedValue(sparseContainers);
+      const mockGet = vi.fn().mockResolvedValue({ containers: sparseContainers, proxyStatus: 'missing' });
       const mockClient = {
         extension: {
           vm: {
@@ -227,10 +247,10 @@ describe('Docker Desktop Service', () => {
       };
 
       const { result } = renderHook(() => useDockerDesktopService(mockClient as any));
-      const containers = await result.current.getContainers();
+      const response = await result.current.getContainers();
 
-      expect(containers).toEqual(sparseContainers);
-      expect(containers[0].containerId).toBe('abc123');
+      expect(response.containers).toEqual(sparseContainers);
+      expect(response.containers[0].containerId).toBe('abc123');
     });
 
     it('should handle empty string values in container data', async () => {
@@ -243,7 +263,7 @@ describe('Docker Desktop Service', () => {
         },
       ];
 
-      const mockGet = vi.fn().mockResolvedValue(emptyStringContainers);
+      const mockGet = vi.fn().mockResolvedValue({ containers: emptyStringContainers, proxyStatus: 'running' });
       const mockClient = {
         extension: {
           vm: {
@@ -255,11 +275,11 @@ describe('Docker Desktop Service', () => {
       };
 
       const { result } = renderHook(() => useDockerDesktopService(mockClient as any));
-      const containers = await result.current.getContainers();
+      const response = await result.current.getContainers();
 
-      expect(containers).toEqual(emptyStringContainers);
-      expect(containers[0].containerId).toBe('');
-      expect(containers[0].name).toBe('');
+      expect(response.containers).toEqual(emptyStringContainers);
+      expect(response.containers[0].containerId).toBe('');
+      expect(response.containers[0].name).toBe('');
     });
   });
 });

@@ -47,6 +47,17 @@ const (
 	proxySocketPath      = "/var/run/imds-proxy/backend.sock"
 	imdsManagedLabel     = "imds-proxy.managed"
 	imdsProvidersLabel   = "imds-proxy.providers"
+	proxyContainerName   = "imds-proxy"
+)
+
+type ProxyContainerState string
+
+const (
+	ProxyStateRunning ProxyContainerState = "running"
+	ProxyStatePaused  ProxyContainerState = "paused"
+	ProxyStateStopped ProxyContainerState = "stopped"
+	ProxyStateFailed  ProxyContainerState = "failed"
+	ProxyStateMissing ProxyContainerState = "missing"
 )
 
 var proxyNotificationSocketPath = "/var/run/imds-proxy/notifications.sock"
@@ -84,6 +95,11 @@ type ContainerInfo struct {
 	ImdsNetworks []ImdsNetworkStatus `json:"imdsNetworks"`
 }
 
+type ContainersAPIResponse struct {
+	Containers  []ContainerInfo     `json:"containers"`
+	ProxyStatus ProxyContainerState `json:"proxyStatus"`
+}
+
 var (
 	settings         Settings
 	settingsMutex    sync.RWMutex
@@ -108,6 +124,39 @@ var findContainerByIPFn = findContainerByIP
 // notifyProxyConfigUpdateFn is a variable so tests can replace it with a no-op
 // to avoid spawning background goroutines that race with test cleanup.
 var notifyProxyConfigUpdateFn = notifyProxyConfigUpdate
+
+func queryProxyContainerState(ctx context.Context, cli DockerClient) ProxyContainerState {
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", proxyContainerName)),
+	})
+	if err != nil {
+		logger.Warnf("Failed to query proxy container state: %v", err)
+		return ProxyStateMissing
+	}
+
+	for _, c := range containers {
+		for _, name := range c.Names {
+			if name == "/"+proxyContainerName || name == proxyContainerName {
+				return containerSummaryStateToProxyState(c.State)
+			}
+		}
+	}
+	return ProxyStateMissing
+}
+
+func containerSummaryStateToProxyState(state string) ProxyContainerState {
+	switch state {
+	case "running":
+		return ProxyStateRunning
+	case "paused":
+		return ProxyStatePaused
+	case "dead":
+		return ProxyStateFailed
+	default:
+		return ProxyStateStopped
+	}
+}
 
 type DockerClient interface {
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
@@ -186,6 +235,7 @@ func main() {
 	router.POST("/settings", saveSettings)
 	router.GET("/proxy-compose", getProxyCompose)
 	router.GET("/containers", getContainers)
+	router.GET("/compose-project-name", getComposeProjectName)
 
 	logger.Fatal(router.Start(startURL))
 }
@@ -752,7 +802,45 @@ func getContainers(ctx echo.Context) error {
 		containerList = append(containerList, info)
 	}
 
-	return ctx.JSON(http.StatusOK, containerList)
+	queryCtx, cancel := context.WithTimeout(ctx.Request().Context(), 3*time.Second)
+	defer cancel()
+	proxyStatus := queryProxyContainerState(queryCtx, dockerClient)
+
+	return ctx.JSON(http.StatusOK, ContainersAPIResponse{
+		Containers:  containerList,
+		ProxyStatus: proxyStatus,
+	})
+}
+
+func getComposeProjectName(ctx echo.Context) error {
+	hostname, err := os.Hostname()
+	if err != nil {
+		logger.Errorf("Failed to get hostname: %v", err)
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get hostname"})
+	}
+
+	queryCtx, cancel := context.WithTimeout(ctx.Request().Context(), 3*time.Second)
+	defer cancel()
+
+	inspect, err := dockerClient.ContainerInspect(queryCtx, hostname)
+	if err != nil {
+		logger.Errorf("Failed to inspect container %s: %v", hostname, err)
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to inspect container"})
+	}
+
+	projectName := ""
+	configFiles := ""
+	if inspect.Config != nil && inspect.Config.Labels != nil {
+		projectName = inspect.Config.Labels["com.docker.compose.project"]
+		configFiles = inspect.Config.Labels["com.docker.compose.project.config_files"]
+	}
+
+	if projectName == "" {
+		logger.Warnf("No com.docker.compose.project label found on container %s", hostname)
+		return ctx.JSON(http.StatusNotFound, map[string]string{"error": "Compose project name not found"})
+	}
+
+	return ctx.JSON(http.StatusOK, map[string]string{"projectName": projectName, "configFiles": configFiles})
 }
 
 func notifyProxyConfigUpdate() {

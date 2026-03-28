@@ -16,6 +16,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/labstack/echo/v4"
 )
 
@@ -162,6 +164,7 @@ func TestSaveSettingsInvalidJSON(t *testing.T) {
 func TestGetContainersEmpty(t *testing.T) {
 	resetTracking()
 	t.Cleanup(resetTracking)
+	withDockerClient(t, &fakeDockerClient{})
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/containers", nil)
@@ -176,18 +179,19 @@ func TestGetContainersEmpty(t *testing.T) {
 		t.Fatalf("want status 200, got %d", rec.Code)
 	}
 
-	var result []ContainerInfo
+	var result ContainersAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(result) != 0 {
-		t.Errorf("want empty slice, got %d items", len(result))
+	if len(result.Containers) != 0 {
+		t.Errorf("want empty containers, got %d items", len(result.Containers))
 	}
 }
 
 func TestGetContainersWithData(t *testing.T) {
 	resetTracking()
 	t.Cleanup(resetTracking)
+	withDockerClient(t, &fakeDockerClient{})
 
 	trackedContainersMutex.Lock()
 	trackedContainers["abc"] = ContainerInfo{
@@ -220,17 +224,17 @@ func TestGetContainersWithData(t *testing.T) {
 		t.Fatalf("want status 200, got %d", rec.Code)
 	}
 
-	var result []ContainerInfo
+	var result ContainersAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(result) != 1 {
-		t.Fatalf("want 1 container, got %d", len(result))
+	if len(result.Containers) != 1 {
+		t.Fatalf("want 1 container, got %d", len(result.Containers))
 	}
-	if len(result[0].ImdsNetworks) != 1 {
-		t.Fatalf("want 1 imds network, got %d", len(result[0].ImdsNetworks))
+	if len(result.Containers[0].ImdsNetworks) != 1 {
+		t.Fatalf("want 1 imds network, got %d", len(result.Containers[0].ImdsNetworks))
 	}
-	if !result[0].ImdsNetworks[0].Connected {
+	if !result.Containers[0].ImdsNetworks[0].Connected {
 		t.Errorf("want ImdsNetworks[0].Connected=true for .imds_aws_gcp")
 	}
 }
@@ -276,6 +280,86 @@ func TestGetProxyComposeMissing(t *testing.T) {
 
 	if err := getProxyCompose(c); err != nil {
 		t.Fatalf("getProxyCompose() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want status 500, got %d", rec.Code)
+	}
+}
+
+func TestGetComposeProjectNameSuccess(t *testing.T) {
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{
+			{
+				Config: &container.Config{
+					Labels: map[string]string{
+						"com.docker.compose.project":            "barnacle-imds-proxy",
+						"com.docker.compose.project.config_files": "/path/to/docker-compose.yaml",
+					},
+				},
+			},
+		},
+	}
+	withDockerClient(t, cli)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/compose-project-name", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := getComposeProjectName(c); err != nil {
+		t.Fatalf("getComposeProjectName() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d", rec.Code)
+	}
+
+	var got map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got["projectName"] != "barnacle-imds-proxy" {
+		t.Errorf("want projectName %q, got %q", "barnacle-imds-proxy", got["projectName"])
+	}
+	if got["configFiles"] != "/path/to/docker-compose.yaml" {
+		t.Errorf("want configFiles %q, got %q", "/path/to/docker-compose.yaml", got["configFiles"])
+	}
+}
+
+func TestGetComposeProjectNameMissingLabel(t *testing.T) {
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{
+			{Config: &container.Config{Labels: map[string]string{}}},
+		},
+	}
+	withDockerClient(t, cli)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/compose-project-name", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := getComposeProjectName(c); err != nil {
+		t.Fatalf("getComposeProjectName() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want status 404, got %d", rec.Code)
+	}
+}
+
+func TestGetComposeProjectNameInspectError(t *testing.T) {
+	cli := &fakeDockerClient{inspectErr: errors.New("container not found")}
+	withDockerClient(t, cli)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/compose-project-name", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := getComposeProjectName(c); err != nil {
+		t.Fatalf("getComposeProjectName() returned error: %v", err)
 	}
 
 	if rec.Code != http.StatusInternalServerError {
