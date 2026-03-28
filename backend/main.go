@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
@@ -135,23 +136,18 @@ var findContainerByIPFn = findContainerByIP
 var notifyProxyConfigUpdateFn = notifyProxyConfigUpdate
 
 func queryProxyContainerState(ctx context.Context, cli DockerClient) ProxyContainerState {
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
-		All:     true,
-		Filters: filters.NewArgs(filters.Arg("name", proxyContainerName)),
-	})
+	inspect, err := cli.ContainerInspect(ctx, proxyContainerName)
 	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return ProxyStateMissing
+		}
 		logger.Warnf("Failed to query proxy container state: %v", err)
 		return ProxyStateMissing
 	}
-
-	for _, c := range containers {
-		for _, name := range c.Names {
-			if name == "/"+proxyContainerName || name == proxyContainerName {
-				return containerSummaryStateToProxyState(c.State)
-			}
-		}
+	if inspect.ContainerJSONBase == nil || inspect.State == nil {
+		return ProxyStateMissing
 	}
-	return ProxyStateMissing
+	return containerSummaryStateToProxyState(inspect.State.Status)
 }
 
 func containerSummaryStateToProxyState(state string) ProxyContainerState {
