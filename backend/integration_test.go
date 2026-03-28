@@ -76,6 +76,10 @@ func (m *mockDockerClientWithEvents) ContainerUnpause(_ context.Context, _ strin
 	return nil
 }
 
+func (m *mockDockerClientWithEvents) NetworkList(_ context.Context, _ network.ListOptions) ([]network.Summary, error) {
+	return []network.Summary{}, nil
+}
+
 func (m *mockDockerClientWithEvents) Close() error {
 	close(m.eventsChan)
 	close(m.errorChan)
