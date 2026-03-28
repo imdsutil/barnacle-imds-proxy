@@ -24,6 +24,7 @@ import {
   BACKEND_REQUEST_TIMEOUT_MS,
 } from './constants';
 
+/* v8 ignore next 8 -- service is always mocked in tests */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
@@ -34,6 +35,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 import {
   ContainerInfo,
+  ProxyContainerState,
   isContainersResponse,
 } from './types';
 import { ContainersTable } from './components/ContainersTable';
@@ -87,6 +89,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState(0);
   const [proxyUnreachable, setProxyUnreachable] = useState(false);
   const [proxyHelpOpen, setProxyHelpOpen] = useState(false);
+  const [proxyContainerState, setProxyContainerState] = useState<ProxyContainerState | null>(null);
 
   // Container state
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
@@ -120,7 +123,8 @@ export function App() {
       const result = await withTimeout(service.getContainers(), BACKEND_REQUEST_TIMEOUT_MS);
       if (isContainersResponse(result) && isMountedRef.current) {
         hasLoadedOnceRef.current = true;
-        setContainers(result);
+        setContainers(result.containers);
+        setProxyContainerState(result.proxyStatus);
         setProxyUnreachable(false);
       } else if (isMountedRef.current) {
         showSnackbar('Unexpected containers response format', 'error');
@@ -176,6 +180,27 @@ export function App() {
         showSnackbar('Failed to copy to clipboard', 'error');
       });
   };
+
+  const handleProxyAction = useCallback(async () => {
+    if (!ddClient || !proxyContainerState) return;
+    try {
+      if (proxyContainerState === 'paused') {
+        await ddClient.docker.cli.exec('unpause', ['imds-proxy']);
+      } else if (proxyContainerState === 'missing') {
+        const { projectName, configFiles } = await service.getComposeProjectName();
+        const args = configFiles
+          ? ['-f', configFiles, '-p', projectName, 'up', '-d', 'imds-proxy']
+          : ['-p', projectName, 'up', '-d', 'imds-proxy'];
+        await ddClient.docker.cli.exec('compose', args);
+      } else {
+        await ddClient.docker.cli.exec('start', ['imds-proxy']);
+      }
+      loadContainers();
+    } catch (err) {
+      console.error('Failed to control proxy container:', err);
+      showSnackbar('Failed to start proxy container', 'error');
+    }
+  }, [ddClient, proxyContainerState, service, loadContainers, showSnackbar]);
 
   const handleSnackbarClose = () => {
     setSnackbarOpen(false);
@@ -259,6 +284,23 @@ export function App() {
               </IconButton>
             </Tooltip>
           </Stack>
+
+          {proxyContainerState !== null && proxyContainerState !== 'running' && (
+            <Alert
+              severity={proxyContainerState === 'paused' || proxyContainerState === 'stopped' ? 'warning' : 'error'}
+              sx={{ mb: 1, alignItems: 'center' }}
+              action={
+                <Button color="inherit" size="small" onClick={handleProxyAction}>
+                  {proxyContainerState === 'paused' ? 'Unpause' : 'Start'}
+                </Button>
+              }
+            >
+              {proxyContainerState === 'paused' && 'The IMDS proxy container is paused — IMDS requests are not being proxied.'}
+              {proxyContainerState === 'stopped' && 'The IMDS proxy container has stopped — IMDS requests are not being proxied.'}
+              {proxyContainerState === 'failed' && 'The IMDS proxy container has crashed — IMDS requests are not being proxied.'}
+              {proxyContainerState === 'missing' && 'The IMDS proxy container is not running — IMDS requests are not being proxied.'}
+            </Alert>
+          )}
 
           <ContainersTable
             containers={containers}

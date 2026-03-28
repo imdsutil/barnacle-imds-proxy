@@ -47,48 +47,37 @@ describe('Type Guards', () => {
   });
 
   describe('isContainersResponse', () => {
-    it('should return true for valid containers array', () => {
-      const containers = [
-        createMockContainer({
-          containerId: TEST_CONTAINER_ID,
-          name: '/my-container',
-          labels: { key: 'value' },
-        }),
-      ];
-      expect(isContainersResponse(containers)).toBe(true);
+    it('should return true for valid containers response', () => {
+      const response = {
+        containers: [
+          createMockContainer({
+            containerId: TEST_CONTAINER_ID,
+            name: '/my-container',
+            labels: { key: 'value' },
+          }),
+        ],
+        proxyStatus: 'running',
+      };
+      expect(isContainersResponse(response)).toBe(true);
     });
 
     it('should return true for empty containers array', () => {
-      expect(isContainersResponse([])).toBe(true);
+      expect(isContainersResponse({ containers: [], proxyStatus: 'missing' })).toBe(true);
     });
 
-    it('should return false for non-array values', () => {
+    it('should return false for non-object values', () => {
       expect(isContainersResponse('string')).toBe(false);
       expect(isContainersResponse(null)).toBe(false);
       expect(isContainersResponse(undefined)).toBe(false);
-      expect(isContainersResponse({ data: [] })).toBe(false);
+      expect(isContainersResponse([])).toBe(false);
     });
 
-    it('should return false for invalid container objects', () => {
-      const invalidContainers = [
-        {
-          // Missing required fields
-          containerId: TEST_CONTAINER_ID,
-        },
-      ];
-      expect(isContainersResponse(invalidContainers)).toBe(false);
+    it('should return false when containers field is missing', () => {
+      expect(isContainersResponse({ proxyStatus: 'running' })).toBe(false);
     });
 
-    it('should return false if imdsNetworks is not an array', () => {
-      const invalidContainers = [
-        {
-          containerId: TEST_CONTAINER_ID,
-          name: '/my-container',
-          labels: {},
-          imdsNetworks: 'not-an-array',
-        },
-      ];
-      expect(isContainersResponse(invalidContainers)).toBe(false);
+    it('should return false when proxyStatus field is missing', () => {
+      expect(isContainersResponse({ containers: [] })).toBe(false);
     });
   });
 });

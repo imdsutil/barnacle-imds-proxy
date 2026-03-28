@@ -47,6 +47,7 @@ export const createMockService = (
 ): DockerDesktopServiceClient => ({
   getSettings: vi.fn().mockResolvedValue({ url: '' }),
   getContainers: vi.fn().mockResolvedValue([]),
+  getComposeProjectName: vi.fn().mockResolvedValue({ projectName: 'barnacle', configFiles: '/path/to/docker-compose.yaml' }),
   ...overrides,
 });
 
@@ -135,7 +136,7 @@ export const createMockGetImplementation = (responses: MockGetResponses) => {
         }
         return Promise.resolve(containers);
       }
-      return Promise.resolve([]);
+      return Promise.resolve({ containers: [], proxyStatus: 'running' });
     }
     return Promise.reject(new Error('unknown path'));
   };

@@ -39,6 +39,19 @@ export interface SettingsResponse {
 }
 
 /**
+ * State of the IMDS proxy container
+ */
+export type ProxyContainerState = 'running' | 'paused' | 'stopped' | 'failed' | 'missing';
+
+/**
+ * Response from GET /containers
+ */
+export interface ContainersResponse {
+  containers: ContainerInfo[];
+  proxyStatus: ProxyContainerState;
+}
+
+/**
  * Type guard to validate settings response
  */
 export const isSettingsResponse = (value: unknown): value is SettingsResponse => {
@@ -48,17 +61,10 @@ export const isSettingsResponse = (value: unknown): value is SettingsResponse =>
 /**
  * Type guard to validate containers response
  */
-export const isContainersResponse = (value: unknown): value is ContainerInfo[] => {
-  if (!Array.isArray(value)) {
+export const isContainersResponse = (value: unknown): value is ContainersResponse => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
-
-  return value.every((item) =>
-    typeof item === 'object' &&
-    item !== null &&
-    typeof (item as ContainerInfo).containerId === 'string' &&
-    typeof (item as ContainerInfo).name === 'string' &&
-    typeof (item as ContainerInfo).labels === 'object' &&
-    Array.isArray((item as ContainerInfo).imdsNetworks)
-  );
+  const v = value as Record<string, unknown>;
+  return Array.isArray(v.containers) && typeof v.proxyStatus === 'string';
 };

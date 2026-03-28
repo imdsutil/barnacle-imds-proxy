@@ -21,11 +21,12 @@
 
 import { useMemo } from 'react';
 import { createDockerDesktopClient } from '@docker/extension-api-client';
-import type { ContainerInfo, SettingsResponse } from '../types';
+import type { ContainersResponse, SettingsResponse } from '../types';
 
 export interface DockerDesktopServiceClient {
   getSettings: () => Promise<SettingsResponse>;
-  getContainers: () => Promise<ContainerInfo[]>;
+  getContainers: () => Promise<ContainersResponse>;
+  getComposeProjectName: () => Promise<{ projectName: string; configFiles: string }>;
 }
 
 export function useDockerDesktopService(ddClient: ReturnType<typeof createDockerDesktopClient> | null): DockerDesktopServiceClient {
@@ -40,7 +41,13 @@ export function useDockerDesktopService(ddClient: ReturnType<typeof createDocker
       if (!ddClient) {
         throw new Error('Docker Desktop client not available');
       }
-      return ddClient.extension.vm?.service?.get('/containers') as Promise<ContainerInfo[]>;
+      return ddClient.extension.vm?.service?.get('/containers') as Promise<ContainersResponse>;
+    },
+    getComposeProjectName: async () => {
+      if (!ddClient) {
+        throw new Error('Docker Desktop client not available');
+      }
+      return ddClient.extension.vm?.service?.get('/compose-project-name') as Promise<{ projectName: string; configFiles: string }>;
     },
   }), [ddClient]);
 }
