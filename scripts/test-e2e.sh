@@ -13,29 +13,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# End-to-end tests for barnacle-imds-proxy.
+#
+# BACKEND controls which upstream server is used:
+#   BACKEND=test-server  (default) — starts the built-in Go test server on TEST_SERVER_PORT
+#   BACKEND=imds-server             — expects imds-server already running; skips echo-header tests
+#
+# The extension must be configured to point at the appropriate backend URL before running.
 
 CONTAINER_NAME="imds-e2e-test"
-TEST_SERVER_PORT=8080
+BACKEND="${BACKEND:-test-server}"
+TEST_SERVER_PORT="${TEST_SERVER_PORT:-8080}"
+IMDS_SERVER_PORT="${IMDS_SERVER_PORT:-3333}"
 TEST_SERVER_PID=""
+CONTROLLER_SOCKET="/run/guest-services/backend.sock"
+
+# Update the extension backend URL via the controller's settings API
+set_backend_url() {
+    local url="$1"
+    docker exec imds-proxy-controller \
+        curl -sf --unix-socket "$CONTROLLER_SOCKET" \
+        -X POST -H 'Content-Type: application/json' \
+        -d "{\"url\":\"$url\"}" \
+        http://localhost/settings >/dev/null
+}
 
 setup_file() {
-    # Build and start the test server
-    cd "$BATS_TEST_DIRNAME/../test-server"
-    go build -o "$BATS_FILE_TMPDIR/test-server" .
-    "$BATS_FILE_TMPDIR/test-server" -port="$TEST_SERVER_PORT" &
-    TEST_SERVER_PID=$!
-    echo "$TEST_SERVER_PID" > "$BATS_FILE_TMPDIR/test-server.pid"
+    if [ "$BACKEND" = "test-server" ]; then
+        # Build and start the test server
+        cd "$BATS_TEST_DIRNAME/../test-server"
+        go build -o "$BATS_FILE_TMPDIR/test-server" .
+        "$BATS_FILE_TMPDIR/test-server" -port="$TEST_SERVER_PORT" &
+        TEST_SERVER_PID=$!
+        echo "$TEST_SERVER_PID" > "$BATS_FILE_TMPDIR/test-server.pid"
 
-    # Wait for it to be ready
-    for i in $(seq 1 10); do
-        if curl -sf "http://localhost:$TEST_SERVER_PORT/" >/dev/null 2>&1; then
-            break
+        # Wait for it to be ready
+        for i in $(seq 1 10); do
+            if curl -sf "http://localhost:$TEST_SERVER_PORT/status" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        if ! curl -sf "http://localhost:$TEST_SERVER_PORT/status" >/dev/null 2>&1; then
+            echo "Test server failed to start on port $TEST_SERVER_PORT" >&2
+            return 1
         fi
-        sleep 1
-    done
-    if ! curl -sf "http://localhost:$TEST_SERVER_PORT/" >/dev/null 2>&1; then
-        echo "Test server failed to start on port $TEST_SERVER_PORT" >&2
-        return 1
+
+        set_backend_url "http://localhost:$TEST_SERVER_PORT"
+    else
+        set_backend_url "http://localhost:$IMDS_SERVER_PORT"
     fi
 
     # Start a labeled container
@@ -45,7 +71,7 @@ setup_file() {
     # Wait for controller to attach networks
     for i in $(seq 1 15); do
         networks=$(docker inspect "$CONTAINER_NAME" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null || echo "")
-        if echo "$networks" | grep -q 'imds_aws_gcp'; then
+        if echo "$networks" | grep -q '\.imds-0'; then
             return 0
         fi
         sleep 1
@@ -63,42 +89,44 @@ teardown_file() {
 
 # --- network tests ---
 
-@test "imds_aws_gcp network exists" {
-    docker network ls --format '{{.Name}}' | grep -q '\.imds_aws_gcp'
+@test ".imds-0 network exists" {
+    docker network ls --format '{{.Name}}' | grep -q '\.imds-0'
 }
 
-@test "imds_openstack network exists" {
-    docker network ls --format '{{.Name}}' | grep -q '\.imds_openstack'
+@test ".imds-1 network exists" {
+    docker network ls --format '{{.Name}}' | grep -q '\.imds-1'
 }
 
 @test "container is attached to IMDS networks" {
     networks=$(docker inspect "$CONTAINER_NAME" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}')
-    echo "$networks" | grep -q 'imds_aws_gcp'
-    echo "$networks" | grep -q 'imds_openstack'
+    echo "$networks" | grep -q '\.imds-0'
+    echo "$networks" | grep -q '\.imds-1'
 }
 
-# --- reachability tests ---
+# --- reachability tests (use /status — present on both backends) ---
 
 @test "IPv4 169.254.169.254 is reachable" {
-    docker exec "$CONTAINER_NAME" wget -qO- --timeout=5 http://169.254.169.254/
+    docker exec "$CONTAINER_NAME" wget -qO- --timeout=5 http://169.254.169.254/status
 }
 
 @test "IPv6 fd00:ec2::254 is reachable" {
-    docker exec "$CONTAINER_NAME" wget -qO- --timeout=5 "http://[fd00:ec2::254]/"
+    docker exec "$CONTAINER_NAME" wget -qO- --timeout=5 "http://[fd00:ec2::254]/status"
 }
 
 @test "IPv6 fd00:a9fe:a9fe::254 is reachable" {
-    docker exec "$CONTAINER_NAME" wget -qO- --timeout=5 "http://[fd00:a9fe:a9fe::254]/"
+    docker exec "$CONTAINER_NAME" wget -qO- --timeout=5 "http://[fd00:a9fe:a9fe::254]/status"
 }
 
-# --- proxy header tests (require test server running and extension pointed at localhost:8080) ---
+# --- proxy header tests (test-server only) ---
 
 @test "X-Container-Id header is forwarded" {
+    [ "$BACKEND" = "test-server" ] || skip "requires test-server backend"
     run docker exec "$CONTAINER_NAME" wget -qS --timeout=5 http://169.254.169.254/ -O /dev/null 2>&1
     echo "$output" | grep -qi 'X-Echo-X-Container-Id'
 }
 
 @test "X-Container-Name header is forwarded" {
+    [ "$BACKEND" = "test-server" ] || skip "requires test-server backend"
     run docker exec "$CONTAINER_NAME" wget -qS --timeout=5 http://169.254.169.254/ -O /dev/null 2>&1
     echo "$output" | grep -qi 'X-Echo-X-Container-Name'
 }

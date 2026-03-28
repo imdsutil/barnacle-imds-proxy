@@ -26,6 +26,7 @@ COPY logo.svg /ui/src/logo.svg
 RUN pnpm run build
 
 FROM alpine
+RUN apk add --no-cache curl
 ARG DESCRIPTION="Description not set"
 LABEL org.opencontainers.image.title="Barnacle IMDS Proxy" \
     org.opencontainers.image.description="${DESCRIPTION}" \
