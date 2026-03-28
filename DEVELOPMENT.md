@@ -42,7 +42,7 @@ make test-integration
 make test-coverage
 ```
 
-There's also `make bench` for benchmarks and `make regression` for the full suite including race detection and integration tests.
+There's also `make bench` for benchmarks and `make regression` for lint + tests + integration tests in one shot.
 
 ### End-to-end tests
 
@@ -65,17 +65,16 @@ make lint-fix      # pre-commit on all files
 
 ## Test server
 
-The repo includes a test IMDS server for local development:
+The repo includes a test IMDS server for local development. Run it in a separate terminal before starting your test containers:
 
 ```bash
 make run-test-server
-```
 
-This starts a server on port 8080. Point the extension at `http://localhost:8080` (the proxy rewrites `localhost` to `host.docker.internal` automatically). You can also pick a different port:
-
-```bash
+# Custom port
 make run-test-server-port PORT=9000
 ```
+
+The server runs in the foreground and logs all incoming requests, including headers. Point the extension at `http://localhost:8080` (or your custom port) — the proxy rewrites `localhost` to `host.docker.internal` automatically.
 
 ## UI development
 
@@ -111,7 +110,7 @@ The extension runs inside Docker Desktop's Linux VM, so most code is platform-ag
 - [ ] Uninstall is clean
 
 **Networking**
-- [ ] Both IMDS bridge networks are created (`.imds_aws_gcp`, `.imds_openstack`)
+- [ ] Both IMDS bridge networks are created (`.imds-0`, `.imds-1`)
 - [ ] IPv4 `169.254.169.254` is reachable from a labeled container
 - [ ] IPv6 `fd00:ec2::254` is reachable from a labeled container
 - [ ] IPv6 `fd00:a9fe:a9fe::254` is reachable from a labeled container
