@@ -91,3 +91,48 @@ func TestPersistSettingsWritesFile(t *testing.T) {
 		t.Fatalf("want settings file to be written")
 	}
 }
+
+func TestPersistSettingsWriteError(t *testing.T) {
+	tempDir := t.TempDir()
+	originalPath := settingsPath
+	// Point settingsPath at a directory (not a file) so WriteFile fails
+	settingsPath = tempDir
+	defer func() { settingsPath = originalPath }()
+
+	settingsMutex.Lock()
+	settings = Settings{URL: "http://write-error.example.com"}
+	settingsMutex.Unlock()
+	defer func() {
+		settingsMutex.Lock()
+		settings = Settings{}
+		settingsMutex.Unlock()
+	}()
+
+	if err := persistSettings(); err == nil {
+		t.Fatal("want error when writing to a directory path, got nil")
+	}
+}
+
+func TestPersistSettingsNestedDir(t *testing.T) {
+	tempDir := t.TempDir()
+	originalPath := settingsPath
+	settingsPath = filepath.Join(tempDir, "nested", "deep", "settings.json")
+	defer func() { settingsPath = originalPath }()
+
+	settingsMutex.Lock()
+	settings = Settings{URL: "http://nested.example.com"}
+	settingsMutex.Unlock()
+	defer func() {
+		settingsMutex.Lock()
+		settings = Settings{}
+		settingsMutex.Unlock()
+	}()
+
+	if err := persistSettings(); err != nil {
+		t.Fatalf("persistSettings() with nested dir returned error: %v", err)
+	}
+
+	if _, err := os.Stat(settingsPath); err != nil {
+		t.Errorf("settings file not created at %s: %v", settingsPath, err)
+	}
+}

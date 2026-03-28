@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -31,13 +32,21 @@ import (
 type fakeDockerClient struct {
 	inspectCalls        int
 	inspectSequence     []container.InspectResponse
+	inspectErr          error
 	networkConnectCalls []string
 	pauseCalls          int
 	unpauseCalls        int
 	closeCalls          int
+	containerList       []container.Summary
+	containerListErr    error
+	networkList         []network.Summary
+	networkListErr      error
 }
 
 func (f *fakeDockerClient) ContainerInspect(_ context.Context, _ string) (container.InspectResponse, error) {
+	if f.inspectErr != nil {
+		return container.InspectResponse{}, f.inspectErr
+	}
 	if len(f.inspectSequence) == 0 {
 		return container.InspectResponse{}, nil
 	}
@@ -50,7 +59,7 @@ func (f *fakeDockerClient) ContainerInspect(_ context.Context, _ string) (contai
 }
 
 func (f *fakeDockerClient) ContainerList(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
-	return nil, nil
+	return f.containerList, f.containerListErr
 }
 
 func (f *fakeDockerClient) Events(_ context.Context, _ events.ListOptions) (<-chan events.Message, <-chan error) {
@@ -63,6 +72,9 @@ func (f *fakeDockerClient) NetworkConnect(_ context.Context, networkID, _ string
 }
 
 func (f *fakeDockerClient) NetworkList(_ context.Context, _ network.ListOptions) ([]network.Summary, error) {
+	if f.networkList != nil || f.networkListErr != nil {
+		return f.networkList, f.networkListErr
+	}
 	return []network.Summary{}, nil
 }
 
@@ -209,6 +221,54 @@ func TestAddAndRemoveContainerTracking(t *testing.T) {
 		t.Fatalf("want container to be removed")
 	}
 	trackedContainersMutex.RUnlock()
+}
+
+func TestAddContainerToTrackingWithNetworkPauseFirst(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	containerID := "pause-test-abc"
+	inspectInitial := container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			ID:   containerID,
+			Name: "/pause-test",
+			State: &container.State{
+				Running: true,
+			},
+		},
+		Config: &container.Config{Labels: map[string]string{}},
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{},
+		},
+	}
+	inspectUpdated := container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			ID:   containerID,
+			Name: "/pause-test",
+			State: &container.State{
+				Running: true,
+			},
+		},
+		Config: &container.Config{Labels: map[string]string{}},
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{
+				imdsNetworkAWSGCP: {NetworkID: "net-aws"},
+			},
+		},
+	}
+
+	client := &fakeDockerClient{inspectSequence: []container.InspectResponse{inspectInitial, inspectUpdated}}
+
+	if err := addContainerToTrackingWithNetwork(context.Background(), client, containerID, true); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	if client.pauseCalls != 1 {
+		t.Errorf("want 1 pause call, got %d", client.pauseCalls)
+	}
+	if client.unpauseCalls != 1 {
+		t.Errorf("want 1 unpause call, got %d", client.unpauseCalls)
+	}
 }
 
 // TestConcurrentContainerTracking tests concurrent additions and removals
@@ -908,5 +968,387 @@ func TestStressRapidSettingsChanges(t *testing.T) {
 		finalURL := settings.URL
 		settingsMutex.RUnlock()
 		t.Logf("Final settings URL: %s", finalURL)
+	}
+}
+
+func resetManagedNetworks() {
+	managedNetworksMutex.Lock()
+	defer managedNetworksMutex.Unlock()
+	managedNetworks = nil
+}
+
+func TestScanExistingContainersEmpty(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	cli := &fakeDockerClient{}
+	if err := scanExistingContainers(context.Background(), cli); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	trackedContainersMutex.RLock()
+	n := len(trackedContainers)
+	trackedContainersMutex.RUnlock()
+	if n != 0 {
+		t.Errorf("want 0 tracked containers, got %d", n)
+	}
+}
+
+func TestScanExistingContainersLabeledContainer(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	containerID := "labeled123"
+	cli := &fakeDockerClient{
+		containerList: []container.Summary{
+			{
+				ID:     containerID,
+				Labels: map[string]string{"imds-proxy.enabled": "true"},
+			},
+		},
+		inspectSequence: []container.InspectResponse{
+			{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:    containerID,
+					Name:  "/labeled",
+					State: &container.State{Running: false},
+				},
+				Config: &container.Config{Labels: map[string]string{"imds-proxy.enabled": "true"}},
+				NetworkSettings: &container.NetworkSettings{
+					Networks: map[string]*network.EndpointSettings{
+						".imds_aws_gcp": {NetworkID: "net1"},
+					},
+				},
+			},
+			{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:    containerID,
+					Name:  "/labeled",
+					State: &container.State{Running: false},
+				},
+				Config: &container.Config{Labels: map[string]string{"imds-proxy.enabled": "true"}},
+				NetworkSettings: &container.NetworkSettings{
+					Networks: map[string]*network.EndpointSettings{
+						".imds_aws_gcp":   {NetworkID: "net1"},
+						".imds_openstack": {NetworkID: "net2"},
+					},
+				},
+			},
+		},
+	}
+
+	if err := scanExistingContainers(context.Background(), cli); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	trackedContainersMutex.RLock()
+	_, ok := trackedContainers[containerID]
+	trackedContainersMutex.RUnlock()
+	if !ok {
+		t.Errorf("want container %s to be tracked", containerID)
+	}
+}
+
+func TestScanExistingContainersUnlabeledContainer(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	cli := &fakeDockerClient{
+		containerList: []container.Summary{
+			{
+				ID:     "unlabeled456",
+				Labels: map[string]string{"some-other-label": "value"},
+			},
+		},
+	}
+
+	if err := scanExistingContainers(context.Background(), cli); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	trackedContainersMutex.RLock()
+	n := len(trackedContainers)
+	trackedContainersMutex.RUnlock()
+	if n != 0 {
+		t.Errorf("want 0 tracked containers for unlabeled container, got %d", n)
+	}
+}
+
+func TestScanExistingContainersError(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	cli := &fakeDockerClient{
+		containerListErr: errors.New("docker unavailable"),
+	}
+
+	err := scanExistingContainers(context.Background(), cli)
+	if err == nil {
+		t.Fatal("want error propagated, got nil")
+	}
+}
+
+func TestDiscoverManagedNetworksEmpty(t *testing.T) {
+	resetManagedNetworks()
+	t.Cleanup(resetManagedNetworks)
+
+	cli := &fakeDockerClient{networkList: []network.Summary{}}
+
+	if err := discoverManagedNetworks(context.Background(), cli); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	managedNetworksMutex.RLock()
+	n := len(managedNetworks)
+	managedNetworksMutex.RUnlock()
+	if n != 0 {
+		t.Errorf("want 0 managed networks, got %d", n)
+	}
+}
+
+func TestDiscoverManagedNetworksWithProviders(t *testing.T) {
+	resetManagedNetworks()
+	t.Cleanup(resetManagedNetworks)
+
+	cli := &fakeDockerClient{
+		networkList: []network.Summary{
+			{
+				Name: ".imds_aws_gcp",
+				Labels: map[string]string{
+					"imds-proxy.managed":   "true",
+					"imds-proxy.providers": "AWS,GCP",
+				},
+			},
+		},
+	}
+
+	if err := discoverManagedNetworks(context.Background(), cli); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	managedNetworksMutex.RLock()
+	nets := managedNetworks
+	managedNetworksMutex.RUnlock()
+
+	if len(nets) != 1 {
+		t.Fatalf("want 1 managed network, got %d", len(nets))
+	}
+	if nets[0].NetworkName != ".imds_aws_gcp" {
+		t.Errorf("want network name .imds_aws_gcp, got %s", nets[0].NetworkName)
+	}
+	if len(nets[0].Providers) != 2 {
+		t.Fatalf("want 2 providers, got %d", len(nets[0].Providers))
+	}
+	if nets[0].Providers[0] != "AWS" || nets[0].Providers[1] != "GCP" {
+		t.Errorf("want providers [AWS GCP], got %v", nets[0].Providers)
+	}
+}
+
+func TestDiscoverManagedNetworksError(t *testing.T) {
+	resetManagedNetworks()
+	t.Cleanup(resetManagedNetworks)
+
+	cli := &fakeDockerClient{networkListErr: errors.New("network list failed")}
+
+	err := discoverManagedNetworks(context.Background(), cli)
+	if err == nil {
+		t.Fatal("want error propagated, got nil")
+	}
+}
+
+func TestRefreshContainerNetworksTracked(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	containerID := "refresh123"
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/refresh-test",
+		Labels:      map[string]string{},
+		Networks:    []NetworkInfo{},
+	}
+	trackedContainersMutex.Unlock()
+
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{
+			{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:    containerID,
+					Name:  "/refresh-test",
+					State: &container.State{Running: false},
+				},
+				Config: &container.Config{Labels: map[string]string{}},
+				NetworkSettings: &container.NetworkSettings{
+					Networks: map[string]*network.EndpointSettings{
+						".imds_aws_gcp": {NetworkID: "updated-net1"},
+					},
+				},
+			},
+		},
+	}
+
+	if err := refreshContainerNetworks(context.Background(), cli, containerID); err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+
+	trackedContainersMutex.RLock()
+	info := trackedContainers[containerID]
+	trackedContainersMutex.RUnlock()
+
+	if len(info.Networks) != 1 {
+		t.Fatalf("want 1 network after refresh, got %d", len(info.Networks))
+	}
+	if info.Networks[0].NetworkID != "updated-net1" {
+		t.Errorf("want NetworkID updated-net1, got %s", info.Networks[0].NetworkID)
+	}
+}
+
+func TestRefreshContainerNetworksUntracked(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{
+			{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:    "untracked999",
+					Name:  "/untracked",
+					State: &container.State{Running: false},
+				},
+				Config: &container.Config{Labels: map[string]string{}},
+				NetworkSettings: &container.NetworkSettings{
+					Networks: map[string]*network.EndpointSettings{},
+				},
+			},
+		},
+	}
+
+	// Container is not in trackedContainers — should return nil without panic.
+	if err := refreshContainerNetworks(context.Background(), cli, "untracked999"); err != nil {
+		t.Fatalf("want no error for untracked container, got %v", err)
+	}
+}
+
+func TestRefreshContainerNetworksError(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	cli := &fakeDockerClient{inspectErr: errors.New("inspect failed")}
+
+	err := refreshContainerNetworks(context.Background(), cli, "some-container")
+	if err == nil {
+		t.Fatal("want error propagated from inspect, got nil")
+	}
+}
+
+func TestFindContainerByIPFound(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	containerID := "ipfound123"
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/ip-test",
+		Labels:      map[string]string{"app": "test"},
+		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net-x"}},
+	}
+	trackedContainersMutex.Unlock()
+
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{
+			{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:    containerID,
+					Name:  "/ip-test",
+					State: &container.State{Running: true},
+				},
+				Config: &container.Config{Labels: map[string]string{"app": "test"}},
+				NetworkSettings: &container.NetworkSettings{
+					Networks: map[string]*network.EndpointSettings{
+						".imds_aws_gcp": {NetworkID: "net-x", IPAddress: "10.5.0.42"},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := findContainerByIP(context.Background(), cli, "10.5.0.42")
+	if err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+	if resp == nil {
+		t.Fatal("want response, got nil")
+	}
+	if resp.ContainerID != containerID {
+		t.Errorf("want ContainerID %s, got %s", containerID, resp.ContainerID)
+	}
+}
+
+func TestFindContainerByIPNotFound(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	containerID := "ipnotfound456"
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/no-ip",
+		Labels:      map[string]string{},
+		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net-y"}},
+	}
+	trackedContainersMutex.Unlock()
+
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{
+			{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:    containerID,
+					Name:  "/no-ip",
+					State: &container.State{Running: true},
+				},
+				Config: &container.Config{Labels: map[string]string{}},
+				NetworkSettings: &container.NetworkSettings{
+					Networks: map[string]*network.EndpointSettings{
+						".imds_aws_gcp": {NetworkID: "net-y", IPAddress: "10.5.0.1"},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := findContainerByIP(context.Background(), cli, "192.168.99.99")
+	if err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+	if resp != nil {
+		t.Errorf("want nil response for unmatched IP, got %+v", resp)
+	}
+}
+
+func TestFindContainerByIPInspectError(t *testing.T) {
+	resetTracking()
+	t.Cleanup(resetTracking)
+
+	containerID := "inspect-err-789"
+	trackedContainersMutex.Lock()
+	trackedContainers[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/err-container",
+		Labels:      map[string]string{},
+		Networks:    []NetworkInfo{{NetworkName: ".imds_aws_gcp", NetworkID: "net-z"}},
+	}
+	trackedContainersMutex.Unlock()
+
+	cli := &fakeDockerClient{inspectErr: errors.New("inspect error")}
+
+	// findContainerByIP continues past inspect errors and returns nil.
+	resp, err := findContainerByIP(context.Background(), cli, "10.0.0.1")
+	if err != nil {
+		t.Fatalf("want no error (function skips failed inspects), got %v", err)
+	}
+	if resp != nil {
+		t.Errorf("want nil response when inspect fails, got %+v", resp)
 	}
 }
