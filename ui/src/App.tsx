@@ -258,30 +258,36 @@ export function App() {
             <Typography variant="body2">
               Add the following label to a container to enable IMDS proxying:
             </Typography>
-            <Box
-              component="code"
-              sx={{
-                px: 1,
-                py: 0.25,
-                borderRadius: 0.5,
-                bgcolor: 'action.hover',
-                border: '1px solid',
-                borderColor: 'divider',
-                fontFamily: 'monospace',
-                fontSize: '0.875rem',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {IMDS_PROXY_ENABLED_LABEL}
-            </Box>
             <Tooltip title="Copy label">
-              <IconButton
-                size="small"
-                aria-label="Copy label to clipboard"
+              <Box
+                component="code"
                 onClick={() => copyToClipboard(IMDS_PROXY_ENABLED_LABEL, 'label')}
+                aria-label="Copy label to clipboard"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') copyToClipboard(IMDS_PROXY_ENABLED_LABEL, 'label');
+                }}
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  px: 1,
+                  py: 0.25,
+                  borderRadius: 0.5,
+                  bgcolor: 'action.hover',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  fontFamily: 'monospace',
+                  fontSize: '0.875rem',
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'action.selected' },
+                }}
               >
-                <ContentCopyIcon fontSize="small" />
-              </IconButton>
+                {IMDS_PROXY_ENABLED_LABEL}
+                <ContentCopyIcon sx={{ fontSize: '0.75rem', opacity: 0.6 }} />
+              </Box>
             </Tooltip>
           </Stack>
 
