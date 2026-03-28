@@ -13,6 +13,17 @@ COVERAGE_MIN ?= 80
 
 # ─── Build ────────────────────────────────────────────────────────────────────
 
+build: build-backend build-proxy build-ui ## Build all components
+
+build-backend: ## Build backend Go binary
+	cd backend && go build ./...
+
+build-proxy: ## Build proxy Go binary
+	cd proxy && go build ./...
+
+build-ui: ## Build UI (TypeScript compile + Vite bundle)
+	cd ui && pnpm build
+
 build-extension: ## Build service image to be deployed as a desktop extension
 	docker build --tag=$(IMAGE):$(TAG) --build-arg DESCRIPTION="$(DESCRIPTION)" .
 	docker build --tag=$(PROXY_IMAGE):$(TAG) -f Dockerfile.proxy .
@@ -202,7 +213,8 @@ setup: ## Install pre-commit hooks
 	@if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit install; else pre-commit install; fi
 	@echo "Setup complete! Hooks are now active."
 
-.PHONY: build-extension install-extension update-extension uninstall-extension prepare-buildx push-extension \
+.PHONY: build build-backend build-proxy build-ui \
+        build-extension install-extension update-extension uninstall-extension prepare-buildx push-extension \
         run-test-server run-test-server-port \
         test test-backend test-proxy test-ui \
         test-coverage test-backend-coverage test-proxy-coverage test-ui-coverage \
