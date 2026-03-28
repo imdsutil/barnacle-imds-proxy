@@ -104,6 +104,10 @@ export function App() {
   const isMountedRef = useRef(false);
   // Only show the loading skeleton on the first fetch, not on background poll refreshes
   const hasLoadedOnceRef = useRef(false);
+  // Require 2 consecutive failures before showing the unreachable banner, to avoid
+  // flicker when the controller is briefly unavailable during startup or restart
+  const consecutiveFailuresRef = useRef(0);
+  const UNREACHABLE_THRESHOLD = 2;
 
   const showSnackbar = useCallback((message: string, severity: 'success' | 'error') => {
     setSnackbarMessage(message);
@@ -123,6 +127,7 @@ export function App() {
       const result = await withTimeout(service.getContainers(), BACKEND_REQUEST_TIMEOUT_MS);
       if (isContainersResponse(result) && isMountedRef.current) {
         hasLoadedOnceRef.current = true;
+        consecutiveFailuresRef.current = 0;
         setContainers(result.containers);
         setProxyContainerState(result.proxyStatus);
         setProxyUnreachable(false);
@@ -131,7 +136,8 @@ export function App() {
       }
     } catch (error) {
       console.error('Failed to load containers:', error);
-      if (isMountedRef.current) {
+      consecutiveFailuresRef.current += 1;
+      if (isMountedRef.current && consecutiveFailuresRef.current >= UNREACHABLE_THRESHOLD) {
         setProxyUnreachable(true);
       }
     } finally {
@@ -336,39 +342,49 @@ export function App() {
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 1.5 }}>
             The Barnacle controller is not responding, so the container list may be outdated.
-            The IMDS proxy runs separately and may still be proxying IMDS traffic correctly.
-            To restore full functionality, try the following steps:
+            The IMDS proxy runs separately and may still be forwarding traffic correctly.
+            Try the following steps in order until it recovers:
           </Typography>
           <List dense disablePadding>
             <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
               <ListItemText
-                primary="1. Restart the extension"
-                secondary="In Docker Desktop, open the Extensions Marketplace, find Barnacle, and click Disable then Enable."
+                primary="1. Navigate away and return"
+                secondary="Click another section in the Docker Desktop sidebar, then come back to this extension."
               />
             </ListItem>
             <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
               <ListItemText
-                primary="2. Restart Docker Desktop"
+                primary="2. Disable and re-enable the extension"
+                secondary="In the Extensions Marketplace, find Barnacle and click Disable, then Enable."
+              />
+            </ListItem>
+            <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
+              <ListItemText
+                primary="3. Restart Docker Desktop"
                 secondary="Quit and relaunch Docker Desktop. This restarts all extension services."
               />
             </ListItem>
             <ListItem sx={{ alignItems: 'flex-start', pl: 0 }}>
               <ListItemText
-                primary="3. Still not working?"
+                primary="4. Reboot"
                 secondary={
-                  <Link
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (ddClient?.host?.openExternal) {
-                        ddClient.host.openExternal(`${GITHUB_REPO_URL}#troubleshooting`);
-                      } else {
-                        window.open(`${GITHUB_REPO_URL}#troubleshooting`, '_blank', 'noopener,noreferrer');
-                      }
-                    }}
-                  >
-                    View the troubleshooting guide
-                  </Link>
+                  <>
+                    {"Still not working? Reboot your machine, then "}
+                    <Link
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (ddClient?.host?.openExternal) {
+                          ddClient.host.openExternal(`${GITHUB_REPO_URL}#troubleshooting`);
+                        } else {
+                          window.open(`${GITHUB_REPO_URL}#troubleshooting`, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                    >
+                      view the troubleshooting guide
+                    </Link>
+                    {" if the problem persists."}
+                  </>
                 }
               />
             </ListItem>
