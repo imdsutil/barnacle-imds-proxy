@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.6.0...v0.7.0) (2026-03-28)
+
+
+### Features
+
+* detect proxy container state and surface recovery actions in UI ([f445a45](https://github.com/imdsutil/barnacle-imds-proxy/commit/f445a45db347f0d07beab42d13d926176723d46d))
+* detect proxy container state and surface recovery actions in UI ([a137001](https://github.com/imdsutil/barnacle-imds-proxy/commit/a13700175c41f38efa9e1c240f4df455707111e5))
+
 ## [0.6.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.5.0...v0.6.0) (2026-03-28)
 
 
