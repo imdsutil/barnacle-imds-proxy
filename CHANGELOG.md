@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.4.0...v0.5.0) (2026-03-28)
+
+
+### Features
+
+* show IMDS network connection status per container ([f3672d7](https://github.com/imdsutil/barnacle-imds-proxy/commit/f3672d7b85c871060d70a3a1326de24fe7df92f2))
+* show IMDS network connection status per container ([d0ea825](https://github.com/imdsutil/barnacle-imds-proxy/commit/d0ea82566aded2951c4644385332a6fa99ad529c)), closes [#20](https://github.com/imdsutil/barnacle-imds-proxy/issues/20)
+
+
+### Bug Fixes
+
+* **ui:** accessibility and UX improvements ([1f5cdda](https://github.com/imdsutil/barnacle-imds-proxy/commit/1f5cdda80a5233fbdb14c1b6c5c972d01c625273))
+* **ui:** keyboard accessibility improvements ([28f0796](https://github.com/imdsutil/barnacle-imds-proxy/commit/28f07968576ef7f1c54bea669e4bb95d01656fd9))
+* **ui:** make backend unreachable message keyboard accessible ([a06d87d](https://github.com/imdsutil/barnacle-imds-proxy/commit/a06d87d8d28ff17e83bdb6e12394b13a859c3b0f))
+* **ui:** prevent label key/value overflow in expanded row ([ee5a325](https://github.com/imdsutil/barnacle-imds-proxy/commit/ee5a325df06434a150213d76410c2e0ff29f2f76))
+* **ui:** show 'Saved' only until user edits the URL field ([cebf0a1](https://github.com/imdsutil/barnacle-imds-proxy/commit/cebf0a10df9be25c0b907275d58a475465cb2a99))
+* **ui:** success snackbars auto-hide after 3s, errors require dismissal ([5dbd419](https://github.com/imdsutil/barnacle-imds-proxy/commit/5dbd41935b5d50f795f77afb985efb55ecd6b9e8))
+* **ui:** validate URL format before saving settings ([fed396d](https://github.com/imdsutil/barnacle-imds-proxy/commit/fed396de3f4f8f473e3741b658fd031b2bb1dbcc))
+
 ## [0.4.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.3.0...v0.4.0) (2026-03-27)
 
 
