@@ -41,6 +41,10 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [savedUrl, setSavedUrl] = useState('');
+
+  // Keep refs in sync so polling callbacks can read current values without stale closures
+  useEffect(() => { urlRef.current = url; }, [url]);
+  useEffect(() => { savedUrlRef.current = savedUrl; }, [savedUrl]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [isDebouncing, setIsDebouncing] = useState(false);
@@ -48,6 +52,8 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
   // Track mount status to prevent state updates after unmount during async settings load
   const isMountedRef = useRef(false);
+  const urlRef = useRef(url);
+  const savedUrlRef = useRef(savedUrl);
 
   useEffect(() => {
     if (!ddClient) {
@@ -87,8 +93,16 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
     loadSettings();
 
+    // Poll for external settings changes, but skip if the user has unsaved edits
+    const pollInterval = setInterval(() => {
+      if (isMountedRef.current && urlRef.current === savedUrlRef.current) {
+        loadSettings();
+      }
+    }, 5000);
+
     return () => {
       isMountedRef.current = false;
+      clearInterval(pollInterval);
     };
   }, [ddClient, service, showSnackbar]);
 
