@@ -62,8 +62,8 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
     isMountedRef.current = true;
 
     // Load saved settings from backend
-    const loadSettings = async () => {
-      setIsLoadingSettings(true);
+    const loadSettings = async (showSkeleton = true) => {
+      if (showSkeleton) setIsLoadingSettings(true);
       try {
         const result = await withTimeout(service.getSettings(), BACKEND_REQUEST_TIMEOUT_MS);
         if (isSettingsResponse(result)) {
@@ -85,7 +85,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
           setSavedUrl(savedUrl);
         }
       } finally {
-        if (isMountedRef.current) {
+        if (showSkeleton && isMountedRef.current) {
           setIsLoadingSettings(false);
         }
       }
@@ -96,7 +96,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
     // Poll for external settings changes, but skip if the user has unsaved edits
     const pollInterval = setInterval(() => {
       if (isMountedRef.current && urlRef.current === savedUrlRef.current) {
-        loadSettings();
+        loadSettings(false);
       }
     }, 5000);
 
