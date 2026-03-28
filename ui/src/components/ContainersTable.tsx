@@ -257,13 +257,13 @@ export function ContainersTable({
                                     sx={{
                                       fontFamily: 'monospace',
                                       color: 'text.secondary',
-                                      minWidth: 240,
-                                      flexShrink: 0,
+                                      minWidth: 160,
+                                      wordBreak: 'break-all',
                                     }}
                                   >
                                     {key}
                                   </Typography>
-                                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
                                     {value}
                                   </Typography>
                                 </Stack>
