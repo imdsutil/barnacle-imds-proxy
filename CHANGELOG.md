@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.7.0...v0.8.0) (2026-03-28)
+
+
+### Features
+
+* provider-agnostic network naming with per-provider proxy status ([13a78c8](https://github.com/imdsutil/barnacle-imds-proxy/commit/13a78c82990eb6b17a3a811f87da55ca0e171aca))
+* provider-agnostic network naming with per-provider proxy status ([3c7f631](https://github.com/imdsutil/barnacle-imds-proxy/commit/3c7f631628b252c80546309bb15195d8230e0521))
+
+
+### Bug Fixes
+
+* e2e test improvements, settings polling, and proxy state tests ([#32](https://github.com/imdsutil/barnacle-imds-proxy/issues/32)) ([42ecb2f](https://github.com/imdsutil/barnacle-imds-proxy/commit/42ecb2fd6299e6be2d4963bd6fdf8f12cd2e3103))
+* **ui:** backend unreachable UX improvements ([#33](https://github.com/imdsutil/barnacle-imds-proxy/issues/33)) ([70e63a3](https://github.com/imdsutil/barnacle-imds-proxy/commit/70e63a3e95bc3ee29a6ae943c563fcbfbb6a652e))
+* use ContainerInspect to find proxy container, bypassing extension container filter ([#35](https://github.com/imdsutil/barnacle-imds-proxy/issues/35)) ([07b9770](https://github.com/imdsutil/barnacle-imds-proxy/commit/07b977013cfabd41d2d25588cc3ab2717adbf3f4))
+
 ## [0.7.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.6.0...v0.7.0) (2026-03-28)
 
 
