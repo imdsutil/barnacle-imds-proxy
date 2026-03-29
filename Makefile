@@ -1,4 +1,4 @@
-IMAGE?=imds-dev-proxy
+IMAGE?=barnacle-imds-proxy
 TAG?=latest
 PROXY_IMAGE?=$(IMAGE)-proxy
 
@@ -41,7 +41,7 @@ prepare-buildx: ## Create buildx builder for multi-arch build, if not exists
 	docker buildx inspect $(BUILDER) || docker buildx create --name=$(BUILDER) --driver=docker-container --driver-opt=network=host
 
 push-extension: prepare-buildx ## Build & Upload extension image to hub. Do not push if tag already exists: make push-extension tag=0.1
-	docker pull $(IMAGE):$(TAG) && { echo "Failure: Tag already exists"; exit 1; } || docker buildx build --push --builder=$(BUILDER) --platform=linux/amd64,linux/arm64 --build-arg TAG=$(TAG) --build-arg DESCRIPTION="$(DESCRIPTION)" --tag=$(IMAGE):$(TAG) .
+	docker pull $(IMAGE):$(TAG) && { echo "Failure: Tag already exists"; exit 1; } || docker buildx build --push --builder=$(BUILDER) --platform=linux/amd64,linux/arm64 --build-arg TAG=$(TAG) --build-arg DESCRIPTION="$(DESCRIPTION)" --build-arg PROXY_IMAGE=$(PROXY_IMAGE):$(TAG) --tag=$(IMAGE):$(TAG) .
 	docker pull $(PROXY_IMAGE):$(TAG) && { echo "Failure: Proxy tag already exists"; exit 1; } || docker buildx build --push --builder=$(BUILDER) --platform=linux/amd64,linux/arm64 --tag=$(PROXY_IMAGE):$(TAG) -f Dockerfile.proxy .
 
 # ─── Development ──────────────────────────────────────────────────────────────
