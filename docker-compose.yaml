@@ -18,7 +18,7 @@ services:
   # extension's configured backend.
   imds-proxy:
     container_name: imds-proxy
-    image: imds-dev-proxy-proxy:latest
+    image: barnacle-imds-proxy-proxy:latest
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

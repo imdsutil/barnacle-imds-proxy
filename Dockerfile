@@ -28,6 +28,7 @@ RUN pnpm run build
 FROM alpine
 RUN apk add --no-cache curl
 ARG DESCRIPTION="Description not set"
+ARG PROXY_IMAGE=barnacle-imds-proxy-proxy:latest
 LABEL org.opencontainers.image.title="Barnacle IMDS Proxy" \
     org.opencontainers.image.description="${DESCRIPTION}" \
     org.opencontainers.image.vendor="Matt Miller" \
@@ -42,6 +43,7 @@ LABEL org.opencontainers.image.title="Barnacle IMDS Proxy" \
 
 COPY --from=builder /backend/bin/service /
 COPY docker-compose.yaml .
+RUN sed -i "s|barnacle-imds-proxy-proxy:latest|${PROXY_IMAGE}|" docker-compose.yaml
 COPY metadata.json .
 COPY logo.svg .
 COPY --from=client-builder /ui/build ui
