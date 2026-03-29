@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.8.0...v0.8.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* bake versioned proxy image reference into extension image at build time ([#36](https://github.com/imdsutil/barnacle-imds-proxy/issues/36)) ([a75da6f](https://github.com/imdsutil/barnacle-imds-proxy/commit/a75da6fd6fe0c5756fdd978ccbd471efe7c45ad1))
+
 ## [0.8.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.7.0...v0.8.0) (2026-03-28)
 
 
