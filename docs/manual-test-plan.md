@@ -8,7 +8,13 @@ Run on each platform: **macOS**, **Windows**, **Linux**.
 
 - Docker Desktop installed and running
 - Barnacle IMDS Proxy extension installed
-- An IMDS server running and reachable (or the test-server binary)
+- A test IMDS server running and reachable. Start one with:
+
+  ```bash
+  docker run --rm -p 8080:8080 -e HTTP_PORT=8080 mendhak/http-https-echo:latest
+  ```
+
+  This echoes every request back as JSON including all headers, so you can verify `X-Container-Id`, `X-Container-Name`, and label headers arrive correctly. Keep this terminal visible while testing section 13.
 
 ---
 
@@ -312,11 +318,7 @@ docker exec imds-proxy-controller \
 
 PowerShell:
 ```powershell
-docker exec imds-proxy-controller `
-  curl -sf --unix-socket /run/guest-services/backend.sock `
-  -X POST -H 'Content-Type: application/json' `
-  -d '{"url":"http://localhost:9999"}' `
-  http://localhost/settings
+docker exec imds-proxy-controller curl -sf --unix-socket /run/guest-services/backend.sock -X POST -H "Content-Type: application/json" -d '{\"url\":\"http://localhost:9999\"}' http://localhost/settings
 ```
 
 | # | Action | Expected |
@@ -332,6 +334,7 @@ docker exec imds-proxy-controller `
 |---|--------|----------|
 | 10.1 | Click "View documentation" in the header | GitHub repo opens in the system browser (not inside Docker Desktop) |
 | 10.2 | Tab to "View documentation", press Enter | Same result as click |
+| 10.3 | Tab to "View documentation", press Space | No navigation (correct — Space does not activate links, only Enter does) |
 
 ---
 
@@ -363,7 +366,7 @@ Switch in Docker Desktop → Settings → Appearance.
 
 ## 13. Proxy traffic (functional end-to-end)
 
-Requires IMDS server running and configured in the extension.
+Requires the `mendhak/http-https-echo` container running (see Prerequisites) and the extension URL set to `http://localhost:8080`.
 
 ```shell
 # IPv4 (AWS/GCP)
