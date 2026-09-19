@@ -63,3 +63,50 @@ test("a configured IMDS address is shown for each container", async () => {
   const screen = await renderApp(fake);
   await expect.element(screen.getByText("169.254.169.254")).toBeVisible();
 });
+
+test("the header shows the logo and the app title", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  await expect.element(screen.getByAltText("Barnacle Logo")).toBeVisible();
+  await expect.element(screen.getByText("Barnacle IMDS Proxy")).toBeVisible();
+});
+
+test("a View documentation link is visible in the top right", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  await expect.element(screen.getByText("View documentation")).toBeVisible();
+});
+
+test("the Containers tab is selected by default", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  const containersTab = screen.getByRole("tab", { name: "Containers" });
+  const settingsTab = screen.getByRole("tab", { name: "Settings" });
+  await expect.element(containersTab).toHaveAttribute("aria-selected", "true");
+  await expect.element(settingsTab).toHaveAttribute("aria-selected", "false");
+});
+
+// The loading skeleton only appears while the initial /containers request is
+// still in flight. The fake normally resolves synchronously, so there is no
+// window to observe it. To make the window deterministic (without touching
+// fakeDdClient.ts, which is off limits), this test replaces the fake's GET
+// with a promise it controls, then resolves it itself once the skeleton has
+// been observed.
+test("a loading skeleton appears while containers are first loading, then resolves", async () => {
+  const fake = createFakeDdClient();
+  let resolveContainers!: (value: unknown) => void;
+  const pending = new Promise((resolve) => {
+    resolveContainers = resolve;
+  });
+  fake.extension.vm.service.get = (path: string) => {
+    if (path === "/containers") return pending as Promise<unknown>;
+    throw new Error(`fake: unexpected GET ${path} during loading test`);
+  };
+
+  const screen = await renderApp(fake);
+
+  await expect.poll(() => screen.container.querySelector(".MuiSkeleton-root")).not.toBeNull();
+  expect(screen.container.querySelector("table")).toBeNull();
+
+  resolveContainers({ containers: [], proxyStatus: "running" });
+
+  await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
+  expect(screen.container.querySelector(".MuiSkeleton-root")).toBeNull();
+});
