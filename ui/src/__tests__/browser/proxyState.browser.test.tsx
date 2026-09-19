@@ -35,16 +35,26 @@ test("a running proxy shows no alert", async () => {
 });
 
 // Skipped: reproduces issue #64's sibling defect at App.tsx:134. A malformed
-// /containers response bypasses the unreachable state machine and fires a
-// non-dismissable error snackbar on every poll tick. Remove .skip when fixed.
-test.skip("a malformed containers response does not loop an undismissable error", async () => {
+// /containers response never increments consecutiveFailuresRef, so the app
+// never enters the same backend-unreachable state a real failed request
+// would after UNREACHABLE_THRESHOLD ticks; it just fires a fresh error
+// snackbar (autoHideDuration null) on every poll tick instead. This asserts
+// the unreachable banner, not just "an alert exists". Confirmed failing
+// today (timed out waiting for the banner). Remove .skip when fixed.
+test.skip("a malformed containers response drives the app into the unreachable state", async () => {
   const fake = createFakeDdClient({ containers: { totally: "wrong" } });
   const screen = await renderApp(fake);
-  await expect.element(screen.getByRole("alert")).toBeVisible();
+  await expect
+    .element(screen.getByText("Extension backend not responding - list may be outdated."), {
+      timeout: 5000,
+    })
+    .toBeVisible();
 });
 
 // Skipped: issue #65. Both type guards are shape only and there is no error
-// boundary, so one malformed element blanks the panel. Remove .skip when fixed.
+// boundary, so one malformed element blanks the panel. Confirmed failing
+// today (ContainersTable throws "Cannot read properties of undefined
+// (reading 'startsWith')" and React unmounts the tree). Remove .skip when fixed.
 test.skip("a malformed container element does not blank the panel", async () => {
   const fake = createFakeDdClient({ containers: { containers: [{}] }, proxyStatus: "running" });
   const screen = await renderApp(fake);
