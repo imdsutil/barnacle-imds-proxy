@@ -1329,3 +1329,128 @@ func TestFindContainerByIPStaleIndex(t *testing.T) {
 		t.Errorf("want nil response for stale index entry, got %+v", resp)
 	}
 }
+
+func withStubbedProxyNotify(t *testing.T, fn func(string)) {
+	t.Helper()
+	old := notifyProxyContainerDestroyedFn
+	notifyProxyContainerDestroyedFn = fn
+	t.Cleanup(func() { notifyProxyContainerDestroyedFn = old })
+}
+
+func TestRefreshContainerNetworksPrunesStaleIPIndex(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	containerID := "recycle-me"
+	tracker.mu.Lock()
+	tracker.byID[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/recycle",
+		Networks: []NetworkInfo{{
+			NetworkID:   "net-aws",
+			NetworkName: ".imds-0",
+			IPAddress:   "172.20.0.2",
+			IPv6Address: "fd00::2",
+		}},
+	}
+	tracker.mu.Unlock()
+	updateIPIndex(containerID)
+
+	withStubbedProxyNotify(t, func(string) {})
+
+	// The container is reattached and Docker hands it different addresses.
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{{
+			ContainerJSONBase: &container.ContainerJSONBase{ID: containerID, Name: "/recycle"},
+			Config:            &container.Config{Labels: map[string]string{}},
+			NetworkSettings: &container.NetworkSettings{
+				Networks: map[string]*network.EndpointSettings{
+					".imds-0": {
+						NetworkID:         "net-aws",
+						IPAddress:         "172.20.0.7",
+						GlobalIPv6Address: "fd00::7",
+					},
+				},
+			},
+		}},
+	}
+
+	if err := refreshContainerNetworks(context.Background(), cli, containerID); err != nil {
+		t.Fatalf("refreshContainerNetworks: %v", err)
+	}
+
+	tracker.mu.RLock()
+	defer tracker.mu.RUnlock()
+
+	for _, stale := range []string{"172.20.0.2", "fd00::2"} {
+		if owner, ok := tracker.ipToContainerID[stale]; ok {
+			t.Errorf("want released IP %s pruned from index, still maps to %q", stale, owner)
+		}
+	}
+	for _, current := range []string{"172.20.0.7", "fd00::7"} {
+		if tracker.ipToContainerID[current] != containerID {
+			t.Errorf("want current IP %s indexed to %q, got %q", current, containerID, tracker.ipToContainerID[current])
+		}
+	}
+}
+
+func TestRefreshContainerNetworksStoppedContainerReleasesIP(t *testing.T) {
+	resetTracking()
+	defer resetTracking()
+
+	notified := make(chan string, 1)
+	withStubbedProxyNotify(t, func(id string) {
+		select {
+		case notified <- id:
+		default:
+		}
+	})
+
+	containerID := "stopped-container"
+	tracker.mu.Lock()
+	tracker.byID[containerID] = ContainerInfo{
+		ContainerID: containerID,
+		Name:        "/stopped",
+		Networks: []NetworkInfo{{
+			NetworkID:   "net-aws",
+			NetworkName: ".imds-0",
+			IPAddress:   "172.20.0.3",
+		}},
+	}
+	tracker.mu.Unlock()
+	updateIPIndex(containerID)
+
+	// A stopped container keeps its network entry but Docker blanks the addresses,
+	// so the IP is free for reassignment while the container is still tracked.
+	cli := &fakeDockerClient{
+		inspectSequence: []container.InspectResponse{{
+			ContainerJSONBase: &container.ContainerJSONBase{ID: containerID, Name: "/stopped"},
+			Config:            &container.Config{Labels: map[string]string{}},
+			NetworkSettings: &container.NetworkSettings{
+				Networks: map[string]*network.EndpointSettings{
+					".imds-0": {NetworkID: "net-aws", IPAddress: "", GlobalIPv6Address: ""},
+				},
+			},
+		}},
+	}
+
+	if err := refreshContainerNetworks(context.Background(), cli, containerID); err != nil {
+		t.Fatalf("refreshContainerNetworks: %v", err)
+	}
+
+	tracker.mu.RLock()
+	owner, stillIndexed := tracker.ipToContainerID["172.20.0.3"]
+	tracker.mu.RUnlock()
+	if stillIndexed {
+		t.Errorf("want released IP pruned from index, still maps to %q", owner)
+	}
+
+	select {
+	case got := <-notified:
+		if got != containerID {
+			t.Errorf("want proxy notified for %q, got %q", containerID, got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("want proxy notified to drop cached identity for a container that released its IP")
+	}
+}
