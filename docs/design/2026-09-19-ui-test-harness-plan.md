@@ -41,6 +41,7 @@ Four behaviours the spec wants covered are currently broken, tracked in issues #
 | `ui/src/__tests__/browser/proxyState.browser.test.tsx` | Sections 5, 7a-d, 8 |
 | `ui/src/__tests__/browser/settings.browser.test.tsx` | Section 9 |
 | `ui/src/__tests__/browser/appearance.browser.test.tsx` | Sections 11, 12 |
+| `ui/src/__tests__/browser/a11y.browser.test.tsx` | Keyboard checks 4.9-4.17 and 9.10-9.14, plus axe-core audits |
 | `ui/src/__tests__/noHarnessInBuild.test.ts` | Asserts the fake never reaches a production bundle |
 | `ui/vite.config.ts` | Adds the browser test project |
 | `.github/workflows/ci.yml` | Installs Chromium, runs the browser suite |
@@ -197,6 +198,18 @@ git commit -m "test: run the UI in a real browser under vitest browser mode"
 
 ---
 
+### Established by Task 1
+
+These were verified against the running setup and are not open to reinterpretation:
+
+- `render` from `vitest-browser-react` 2.3.0 is **async**. Always `await render(...)` and `await renderApp(...)`.
+- The browser provider is configured as `provider: playwright()` imported from `@vitest/browser-playwright`, not the string `"playwright"`.
+- Every browser test file starts with `/// <reference types="@vitest/browser/matchers" />` above the imports, or `toBeVisible` will not type-check.
+- `ui/src/__tests__/browser/vitest-browser.d.ts` is an ambient type shim that exists because the project uses `moduleResolution: "Node"`, which ignores package `exports` maps. Leave it alone; do not edit `tsconfig.json`.
+- The vitest projects are named `unit` and `browser`.
+
+---
+
 ### Task 2: The controllable fake
 
 **Files:**
@@ -213,7 +226,7 @@ git commit -m "test: run the UI in a real browser under vitest browser mode"
   - `fake.setSettings(value: unknown): void`
   - `fake.failNext(path: string, status: number): void`
   - `fake.savedSettings: unknown[]` recording every POST
-  - `renderApp(fake: FakeDdClient)` returning vitest-browser-react's screen object
+  - `renderApp(fake: FakeDdClient): Promise<...>` returning vitest-browser-react's screen object. It is async because `render` is async in vitest-browser-react 2.3.0; every call site must await it.
 
 - [ ] **Step 1: Write the failing test for the fake**
 
@@ -364,9 +377,9 @@ import { createDockerDesktopClient } from "@docker/extension-api-client";
 import { App } from "../../App";
 import type { FakeDdClient } from "./fakeDdClient";
 
-export function renderApp(fake: FakeDdClient) {
+export async function renderApp(fake: FakeDdClient) {
   vi.mocked(createDockerDesktopClient).mockReturnValue(fake as never);
-  return render(
+  return await render(
     <DockerMuiV6ThemeProvider>
       <App />
     </DockerMuiV6ThemeProvider>
@@ -415,12 +428,12 @@ const container = (name: string, id: string, ip = "169.254.169.254") => ({
 });
 
 test("empty state tells the user no labeled containers are running", async () => {
-  const screen = renderApp(createFakeDdClient());
+  const screen = await renderApp(createFakeDdClient());
   await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
 });
 
 test("the enabling label is shown so it can be copied", async () => {
-  const screen = renderApp(createFakeDdClient());
+  const screen = await renderApp(createFakeDdClient());
   await expect.element(screen.getByText("imds-proxy.enabled=true")).toBeVisible();
 });
 
@@ -428,7 +441,7 @@ test("labeled containers are listed with their id", async () => {
   const fake = createFakeDdClient({
     containers: { containers: [container("alpha", "aaaaaaaaaaaa")], proxyStatus: "running" },
   });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByText("alpha")).toBeVisible();
   await expect.element(screen.getByText("aaaaaaaaaaaa")).toBeVisible();
 });
@@ -440,7 +453,7 @@ test("containers sort by name", async () => {
       proxyStatus: "running",
     },
   });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByText("alpha")).toBeVisible();
   const rows = await screen.container.querySelectorAll("tbody tr");
   expect(rows[0].textContent).toContain("alpha");
@@ -450,7 +463,7 @@ test("a configured IMDS address is shown for each container", async () => {
   const fake = createFakeDdClient({
     containers: { containers: [container("alpha", "aaaaaaaaaaaa")], proxyStatus: "running" },
   });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByText("169.254.169.254")).toBeVisible();
 });
 ```
@@ -499,14 +512,14 @@ test.each(["stopped", "paused", "crashed", "missing"])(
   "proxy status %s produces a visible alert",
   async (status) => {
     const fake = createFakeDdClient({ containers: { containers: [], proxyStatus: status } });
-    const screen = renderApp(fake);
+    const screen = await renderApp(fake);
     await expect.element(screen.getByRole("alert")).toBeVisible();
   }
 );
 
 test("a running proxy shows no alert", async () => {
   const fake = createFakeDdClient({ containers: { containers: [], proxyStatus: "running" } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
   expect(screen.container.querySelector('[role="alert"]')).toBeNull();
 });
@@ -516,7 +529,7 @@ test("a running proxy shows no alert", async () => {
 // non-dismissable error snackbar on every poll tick. Remove .skip when fixed.
 test.skip("a malformed containers response does not loop an undismissable error", async () => {
   const fake = createFakeDdClient({ containers: { totally: "wrong" } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByRole("alert")).toBeVisible();
 });
 
@@ -524,7 +537,7 @@ test.skip("a malformed containers response does not loop an undismissable error"
 // boundary, so one malformed element blanks the panel. Remove .skip when fixed.
 test.skip("a malformed container element does not blank the panel", async () => {
   const fake = createFakeDdClient({ containers: { containers: [{}], proxyStatus: "running" } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByText("Barnacle IMDS Proxy")).toBeVisible();
 });
 ```
@@ -560,20 +573,20 @@ import { userEvent } from "@vitest/browser/context";
 import { createFakeDdClient } from "./fakeDdClient";
 import { renderApp } from "./renderApp";
 
-async function openSettings(screen: ReturnType<typeof renderApp>) {
+async function openSettings(screen: Awaited<ReturnType<typeof renderApp>>) {
   await userEvent.click(screen.getByRole("tab", { name: /settings/i }));
 }
 
 test("an existing URL is shown when the tab opens", async () => {
   const fake = createFakeDdClient({ settings: { url: "http://localhost:8080", customIPs: [] } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await openSettings(screen);
   await expect.element(screen.getByDisplayValue("http://localhost:8080")).toBeVisible();
 });
 
 test("a typed URL is saved to the backend", async () => {
   const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await openSettings(screen);
 
   await userEvent.fill(screen.getByLabelText(/imds server url/i), "http://localhost:9000");
@@ -585,7 +598,7 @@ test("a typed URL is saved to the backend", async () => {
 
 test("an invalid URL is rejected rather than saved", async () => {
   const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await openSettings(screen);
 
   await userEvent.fill(screen.getByLabelText(/imds server url/i), "not-a-url");
@@ -600,7 +613,7 @@ test("an invalid URL is rejected rather than saved", async () => {
 // the real extension. Remove .skip when fixed.
 test.skip("a settings poll does not overwrite text being typed", async () => {
   const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await openSettings(screen);
 
   const field = screen.getByLabelText(/imds server url/i);
@@ -648,19 +661,19 @@ import { renderApp } from "./renderApp";
 test("a backend failure surfaces a visible message", async () => {
   const fake = createFakeDdClient();
   fake.failNext("/containers", 500);
-  const screen = renderApp(fake);
+  const screen = await renderApp(fake);
   await expect.element(screen.getByRole("alert")).toBeVisible();
 });
 
 test("the app renders under a dark colour scheme", async () => {
   await page.emulateMedia({ colorScheme: "dark" });
-  const screen = renderApp(createFakeDdClient());
+  const screen = await renderApp(createFakeDdClient());
   await expect.element(screen.getByText("Barnacle IMDS Proxy")).toBeVisible();
 });
 
 test("the app renders under a light colour scheme", async () => {
   await page.emulateMedia({ colorScheme: "light" });
-  const screen = renderApp(createFakeDdClient());
+  const screen = await renderApp(createFakeDdClient());
   await expect.element(screen.getByText("Barnacle IMDS Proxy")).toBeVisible();
 });
 ```
@@ -681,7 +694,204 @@ git commit -m "test: cover snackbars and colour schemes in a real browser"
 
 ---
 
-### Task 7: Wire it into make and CI
+### Task 7: Keyboard accessibility and axe audits
+
+The manual test plan has fourteen keyboard checks that no other task covers: 4.9 to 4.17 under section 4, and 9.10 to 9.14 under section 9. These are the checks that most need a real browser, because jsdom does not model focus order or key handling faithfully.
+
+**Files:**
+- Create: `ui/src/__tests__/browser/a11y.browser.test.tsx`
+- Modify: `ui/package.json`
+
+**Interfaces:**
+- Consumes: `createFakeDdClient`, `renderApp` from Task 2.
+- Produces: nothing other tasks depend on.
+
+**If a check fails because the component lacks the behaviour:** that is a real accessibility bug, not a test to bend. Mark that single test `.skip` with a comment saying what is missing, note it in your report, and keep going. Do not modify any component to make a check pass.
+
+- [ ] **Step 1: Install axe-core**
+
+```bash
+cd ui && pnpm add -D axe-core
+```
+
+- [ ] **Step 2: Write the keyboard tests**
+
+Create `ui/src/__tests__/browser/a11y.browser.test.tsx` (Apache header first, copied verbatim from `ui/src/App.tsx`):
+
+```tsx
+import { expect, test } from "vitest";
+import { userEvent } from "@vitest/browser/context";
+import { createFakeDdClient } from "./fakeDdClient";
+import { renderApp } from "./renderApp";
+
+const container = (name: string, id: string) => ({
+  name,
+  id,
+  labels: { "imds-proxy.enabled": "true" },
+  addresses: [{ address: "169.254.169.254", connected: true }],
+  networks: [],
+});
+
+const withRows = () =>
+  createFakeDdClient({
+    containers: {
+      containers: [container("alpha", "aaaaaaaaaaaa"), container("beta", "bbbbbbbbbbbb")],
+      proxyStatus: "running",
+    },
+  });
+
+// 4.9: a row takes visible focus when tabbed to.
+test("a container row is reachable by keyboard and shows focus", async () => {
+  const screen = await renderApp(withRows());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const row = screen.container.querySelector("tbody tr") as HTMLElement;
+  row.focus();
+  expect(document.activeElement).toBe(row);
+});
+
+// 4.10 and 4.11: Enter and Space both toggle the row.
+test.each(["{Enter}", " "])("pressing %s on a focused row toggles it", async (key) => {
+  const screen = await renderApp(withRows());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const row = screen.container.querySelector("tbody tr") as HTMLElement;
+  row.focus();
+  const before = screen.container.querySelectorAll("tbody tr").length;
+  await userEvent.keyboard(key);
+  await expect.poll(() => screen.container.querySelectorAll("tbody tr").length).not.toBe(before);
+});
+
+// 4.13, 4.14, 4.15: the per-row controls are focusable and Enter-activated.
+test("every interactive control in a row is reachable by keyboard", async () => {
+  const screen = await renderApp(withRows());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const row = screen.container.querySelector("tbody tr") as HTMLElement;
+  const controls = row.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+  expect(controls.length).toBeGreaterThan(0);
+  for (const control of controls) {
+    (control as HTMLElement).focus();
+    expect(document.activeElement).toBe(control);
+  }
+});
+
+// 4.16 and 4.17: tab order moves between rows without trapping focus.
+test("tabbing moves forward out of a row and shift-tab moves back", async () => {
+  const screen = await renderApp(withRows());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const first = screen.container.querySelector("tbody tr") as HTMLElement;
+  first.focus();
+  const start = document.activeElement;
+
+  await userEvent.tab();
+  expect(document.activeElement).not.toBe(start);
+
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(start);
+});
+
+// 9.10: the Settings tab activates from the keyboard.
+test("the settings tab activates by keyboard", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  const tab = screen.getByRole("tab", { name: /settings/i });
+  await tab.query()?.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
+});
+
+// 9.11, 9.12, 9.13: edit and save with the keyboard alone.
+test("settings can be edited and saved without a mouse", async () => {
+  const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
+  const screen = await renderApp(fake);
+
+  const tab = screen.getByRole("tab", { name: /settings/i });
+  await tab.query()?.focus();
+  await userEvent.keyboard("{Enter}");
+
+  const field = screen.getByLabelText(/imds server url/i);
+  await field.query()?.focus();
+  await userEvent.keyboard("http://localhost:9000");
+
+  const save = screen.getByRole("button", { name: /save/i });
+  await save.query()?.focus();
+  await userEvent.keyboard("{Enter}");
+
+  await expect.poll(() => fake.savedSettings.length).toBe(1);
+});
+
+// 9.14: an invalid submit reports the error and keeps focus near the field.
+test("an invalid keyboard submit reports an error", async () => {
+  const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
+  const screen = await renderApp(fake);
+
+  const tab = screen.getByRole("tab", { name: /settings/i });
+  await tab.query()?.focus();
+  await userEvent.keyboard("{Enter}");
+
+  const save = screen.getByRole("button", { name: /save/i });
+  await save.query()?.focus();
+  await userEvent.keyboard("{Enter}");
+
+  expect(fake.savedSettings).toHaveLength(0);
+});
+```
+
+- [ ] **Step 3: Run the keyboard tests and watch them fail**
+
+Run: `cd ui && pnpm test --project=browser a11y`
+Expected: failures. Correct selectors against `ui/src/components/ContainersTable.tsx` and `ui/src/components/SettingsForm.tsx`, which are the source of truth for roles, labels and which elements are focusable. If a behaviour is genuinely absent, apply the skip rule above.
+
+- [ ] **Step 4: Add the axe audits**
+
+Append to the same file:
+
+```tsx
+import axe from "axe-core";
+
+async function auditFor(node: HTMLElement) {
+  const results = await axe.run(node, {
+    runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] },
+  });
+  return results.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.length} nodes)`);
+}
+
+test("the containers tab has no WCAG A or AA violations", async () => {
+  const screen = await renderApp(withRows());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+  expect(await auditFor(screen.container as HTMLElement)).toEqual([]);
+});
+
+test("the settings tab has no WCAG A or AA violations", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  await userEvent.click(screen.getByRole("tab", { name: /settings/i }));
+  await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
+  expect(await auditFor(screen.container as HTMLElement)).toEqual([]);
+});
+```
+
+- [ ] **Step 5: Run the audits**
+
+Run: `cd ui && pnpm test --project=browser a11y`
+
+The assertion prints every violation as `id: help (N nodes)`, so a failure names exactly what is wrong. If violations are pre-existing component bugs, mark that single test `.skip` with the violation list in a comment and report them. Do not weaken the ruleset to make it pass, and do not edit components.
+
+- [ ] **Step 6: Run the whole browser suite**
+
+Run: `cd ui && pnpm test --project=browser`
+Expected: PASS, with any skips explained in your report.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add ui/package.json ui/pnpm-lock.yaml ui/src/__tests__/browser/a11y.browser.test.tsx
+git commit -m "test: cover keyboard accessibility and add axe audits"
+```
+
+---
+
+### Task 8: Wire it into make and CI
 
 **Files:**
 - Modify: `Makefile`
@@ -707,7 +917,18 @@ And add it to the aggregate target:
 test: test-coverage test-race test-stress test-scripts test-ui-browser ## Run all tests with coverage, race detection, and stress. Set VERBOSE_TESTS=1 to show detailed logs.
 ```
 
-- [ ] **Step 2: Install Chromium in CI**
+- [ ] **Step 2: Ignore browser test artifacts**
+
+A failing browser test writes `ui/.vitest-attachments/` and a screenshots directory. Neither is ignored, so a failed run leaves untracked files that can be committed by accident. Add to `ui/.gitignore`, creating the file if it does not exist:
+
+```gitignore
+.vitest-attachments/
+__screenshots__/
+```
+
+Verify: make a browser test fail on purpose (change an expected string), run `cd ui && pnpm test --project=browser`, confirm `git status --short` stays clean, then revert the test change.
+
+- [ ] **Step 3: Install Chromium in CI**
 
 In `.github/workflows/ci.yml`, in the `test` job, immediately after the `Install bats` step:
 
@@ -716,21 +937,21 @@ In `.github/workflows/ci.yml`, in the `test` job, immediately after the `Install
         run: cd ui && pnpm exec playwright install chromium --with-deps
 ```
 
-- [ ] **Step 3: Verify locally**
+- [ ] **Step 4: Verify locally**
 
 Run: `make test`
 Expected: exit 0, with the browser tests included in the output.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add Makefile .github/workflows/ci.yml
+git add Makefile .github/workflows/ci.yml ui/.gitignore
 git commit -m "ci: run the UI browser suite on every PR"
 ```
 
 ---
 
-### Task 8: Prove the fake cannot ship
+### Task 9: Prove the fake cannot ship
 
 **Files:**
 - Create: `ui/src/__tests__/noHarnessInBuild.test.ts`
@@ -779,7 +1000,7 @@ git commit -m "test: assert harness code never reaches a production bundle"
 
 ---
 
-### Task 9: Reduce the manual test plan
+### Task 10: Reduce the manual test plan
 
 **Files:**
 - Modify: `docs/manual-test-plan.md`
@@ -846,8 +1067,10 @@ git commit -m "docs: reduce the manual test plan to a three item smoke list"
 
 ## Self-review notes
 
-**Spec coverage.** Sections 1, 2, 3, 4, 6 in Task 3. Sections 5, 7a-d, 8 in Task 4. Section 9 in Task 5. Sections 11, 12 in Task 6. Section 10 and the two integration items stay manual per Task 9. Section 13 stays with `test-e2e.sh`. The theme global from the spec's verified findings is Task 1. The leak guard is Task 8.
+**Spec coverage.** The keyboard subsections of sections 4 and 9 (checks 4.9-4.17 and 9.10-9.14) are Task 7, added after a first pass mapped coverage by section number and missed them. Sections 1, 2, 3, 4, 6 in Task 3. Sections 5, 7a-d, 8 in Task 4. Section 9 in Task 5. Sections 11, 12 in Task 6. Section 10 and the two integration items stay manual per Task 9. Section 13 stays with `test-e2e.sh`. The theme global from the spec's verified findings is Task 1. The leak guard is Task 8.
 
 **Deliberately not built.** `window.__harness`, for the reason in the Deviation section.
+
+**Accessibility.** Task 7 also adds axe-core audits at WCAG A and AA, which go beyond anything the manual plan checked. Pre-existing violations are component bugs: they get skipped with the violation list recorded and reported, never fixed by weakening the ruleset.
 
 **Known risk.** The fixture shapes in Tasks 3 to 6 are written from `types.ts` and may not match what the components actually read. Every one of those tasks says to correct the fixture against the component rather than change the component. If a component genuinely needs changing, that is a bug and belongs in its own issue.
