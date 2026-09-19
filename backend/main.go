@@ -224,6 +224,9 @@ var notifyProxyConfigUpdateFn = notifyProxyConfigUpdate
 // reconcileNetworksFn is a variable so tests can replace it with a no-op.
 var reconcileNetworksFn = reconcileNetworks
 
+// notifyProxyContainerDestroyedFn is a variable so tests can replace it with a no-op.
+var notifyProxyContainerDestroyedFn = notifyProxyContainerDestroyed
+
 func queryProxyContainerState(ctx context.Context, cli DockerClient) ProxyContainerState {
 	inspect, err := cli.ContainerInspect(ctx, proxyContainerName)
 	if err != nil {
@@ -422,6 +425,33 @@ func removeIPIndexForContainer(containerID string, containerInfo ContainerInfo) 
 			delete(tracker.ipToContainerID, net.IPv6Address)
 		}
 	}
+}
+
+// releasedIPs returns the addresses in old that are absent from current.
+func releasedIPs(old, current []NetworkInfo) []string {
+	held := make(map[string]struct{}, len(current)*2)
+	for _, net := range current {
+		if net.IPAddress != "" {
+			held[net.IPAddress] = struct{}{}
+		}
+		if net.IPv6Address != "" {
+			held[net.IPv6Address] = struct{}{}
+		}
+	}
+
+	released := make([]string, 0)
+	for _, net := range old {
+		for _, ip := range []string{net.IPAddress, net.IPv6Address} {
+			if ip == "" {
+				continue
+			}
+			if _, stillHeld := held[ip]; !stillHeld {
+				released = append(released, ip)
+			}
+		}
+	}
+
+	return released
 }
 
 func shortID(containerID string) string {
@@ -665,7 +695,7 @@ func monitorDockerEvents() {
 					logger.Infof("Container destroyed: %s", shortID(event.Actor.ID))
 					removeContainerFromTracking(event.Actor.ID)
 					// Notify proxy to clear cache for this container
-					go notifyProxyContainerDestroyed(event.Actor.ID)
+					go notifyProxyContainerDestroyedFn(event.Actor.ID)
 				}
 			} else if event.Type == events.NetworkEventType {
 				switch event.Action {
@@ -834,7 +864,14 @@ func refreshContainerNetworks(ctx context.Context, cli DockerClient, containerID
 
 	tracker.mu.Lock()
 	info, exists := tracker.byID[containerID]
+	var released []string
 	if exists {
+		released = releasedIPs(info.Networks, networks)
+		for _, ip := range released {
+			if tracker.ipToContainerID[ip] == containerID {
+				delete(tracker.ipToContainerID, ip)
+			}
+		}
 		info.Networks = networks
 		tracker.byID[containerID] = info
 	}
@@ -842,6 +879,12 @@ func refreshContainerNetworks(ctx context.Context, cli DockerClient, containerID
 
 	if exists {
 		updateIPIndex(containerID)
+		if len(released) > 0 {
+			// The proxy caches identity keyed by source IP. A released address can be
+			// reassigned to another container well before that entry would expire, so
+			// drop it now rather than waiting for the container to be destroyed.
+			go notifyProxyContainerDestroyedFn(containerID)
+		}
 		logger.Infof("Refreshed networks for container %s", shortID(containerID))
 	}
 
