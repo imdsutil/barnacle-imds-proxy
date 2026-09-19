@@ -27,10 +27,13 @@ if [[ -z "${GUI_DEBUG_LIB:-}" ]]; then
   set -euo pipefail
 fi
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXTENSION="${GUI_DEBUG_EXTENSION:-barnacle-imds-proxy}"
 NESTED_DISPLAY="${GUI_DEBUG_DISPLAY:-:2}"
 NESTED_SCREEN="${GUI_DEBUG_SCREEN:-1600x1000}"
 # Docker Desktop is software-rendered in Xephyr, so it paints slowly on start.
 STARTUP_TIMEOUT="${GUI_DEBUG_TIMEOUT:-240}"
+MIN_WINDOW_AREA=10000
 SERVICE="docker-desktop.service"
 DROPIN_DIR="${HOME}/.config/systemd/user/docker-desktop.service.d"
 DROPIN="${DROPIN_DIR}/99-gui-debug.conf"
@@ -66,21 +69,78 @@ to_screen_coords() {
   echo "$((win_x + rel_x)) $((win_y + rel_y))"
 }
 
-# pick_window_id TARGET  (reads "id<TAB>title" lines on stdin)
+# pick_window_id TARGET  (reads "id<TAB>area<TAB>title" lines on stdin)
 # TARGET is extension, dashboard, or any.
+#
+# Docker Desktop maps several 10x10 placeholder windows alongside the real one,
+# so selection is by area rather than by order. "extension" prefers the webview
+# by title and falls back to the main window, which is what exists before an
+# extension tab has been opened.
 pick_window_id() {
-  local target="$1" id title
-  while IFS=$'\t' read -r id title; do
+  local target="$1" id area title
+  local best_id="" best_area=0 named_id="" named_area=0
+
+  while IFS=$'\t' read -r id area title; do
     [[ -n "$id" ]] || continue
-    case "$target" in
-      extension) [[ "$title" == *"extension"* ]] && { echo "$id"; return 0; } ;;
-      dashboard) [[ "$title" == *"dashboard"* ]] && { echo "$id"; return 0; } ;;
-      any)       [[ "$title" == *"clipboard"* ]] || { echo "$id"; return 0; } ;;
-      *) die "unknown window target '$target' (want extension, dashboard or any)" ;;
-    esac
+    [[ "$area" =~ ^[0-9]+$ ]] || continue
+    [[ "$area" -ge $MIN_WINDOW_AREA ]] || continue
+
+    if [[ "$area" -gt "$best_area" ]]; then
+      best_area="$area"
+      best_id="$id"
+    fi
+    if [[ "$target" == "extension" && "$title" == *"extension"* && "$area" -gt "$named_area" ]]; then
+      named_area="$area"
+      named_id="$id"
+    fi
   done
-  echo "gui-debug: no '$target' window on $NESTED_DISPLAY; is Docker Desktop running there? try: $0 status" >&2
+
+  case "$target" in
+    extension|dashboard|any) ;;
+    *) echo "gui-debug: unknown window target '$target' (want extension, dashboard or any)" >&2; return 1 ;;
+  esac
+
+  if [[ -n "$named_id" ]]; then
+    echo "$named_id"
+    return 0
+  fi
+  if [[ -n "$best_id" ]]; then
+    echo "$best_id"
+    return 0
+  fi
+
+  echo "gui-debug: no usable '$target' window on $NESTED_DISPLAY; is Docker Desktop running there? try: $0 status" >&2
   return 1
+}
+
+# is_repo_vite CMDLINE
+# True only for a Vite belonging to this checkout. The machine may well have
+# another dev server on the same port, and killing that would be rude.
+is_repo_vite() {
+  local cmdline="$1"
+  [[ "$cmdline" == *"$REPO_ROOT/ui/"* && "$cmdline" == *vite* ]]
+}
+
+stop_dev_server() {
+  local pid cmdline stopped=0
+  for pid in /proc/[0-9]*; do
+    pid="${pid#/proc/}"
+    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    [[ -n "$cmdline" ]] || continue
+    if is_repo_vite "$cmdline"; then
+      kill "$pid" 2>/dev/null && stopped=$((stopped + 1))
+    fi
+  done
+  [[ $stopped -gt 0 ]] && echo "stopped $stopped Vite dev server process(es)"
+  return 0
+}
+
+reset_extension_dev_mode() {
+  command -v docker >/dev/null 2>&1 || return 0
+  if docker extension dev reset "$EXTENSION" >/dev/null 2>&1; then
+    echo "reset extension dev mode (ui-source and debug)"
+  fi
+  return 0
 }
 
 display_is_up() {
@@ -97,7 +157,12 @@ list_windows() {
     [[ -n "$id" ]] || continue
     name="$(DISPLAY="$NESTED_DISPLAY" xdotool getwindowname "$id" 2>/dev/null || true)"
     if [[ -n "$name" ]]; then
-      printf '%s\t%s\n' "$id" "$name"
+      local geom w h
+      geom="$(DISPLAY="$NESTED_DISPLAY" xdotool getwindowgeometry --shell "$id" 2>/dev/null || true)"
+      w="$(sed -n 's/^WIDTH=//p' <<<"$geom")"
+      h="$(sed -n 's/^HEIGHT=//p' <<<"$geom")"
+      [[ "$w" =~ ^[0-9]+$ && "$h" =~ ^[0-9]+$ ]] || { w=0; h=0; }
+      printf '%s\t%s\t%s\n' "$id" "$((w * h))" "$name"
     fi
   done < <(DISPLAY="$NESTED_DISPLAY" xdotool search --name "." 2>/dev/null || true)
   # Unnamed windows are normal, so a trailing miss must not look like failure.
@@ -167,10 +232,15 @@ cmd_stop() {
     echo "no drop-in found; Docker Desktop was already on the normal display"
   fi
 
-  if pgrep -f "Xephyr $NESTED_DISPLAY" >/dev/null 2>&1; then
-    pkill -f "Xephyr $NESTED_DISPLAY" || true
+  local xephyr_pid
+  xephyr_pid="$(pgrep -x Xephyr 2>/dev/null | head -1 || true)"
+  if [[ -n "$xephyr_pid" ]]; then
+    kill "$xephyr_pid" 2>/dev/null || true
     echo "stopped Xephyr on $NESTED_DISPLAY"
   fi
+
+  reset_extension_dev_mode
+  stop_dev_server
 }
 
 cmd_status() {
@@ -182,8 +252,8 @@ cmd_status() {
   fi
   [[ -f "$DROPIN" ]] && echo "drop-in: installed" || echo "drop-in: absent"
   echo "windows:"
-  list_windows | while IFS=$'\t' read -r id title; do
-    printf '  %-10s %s\n' "$id" "$title"
+  list_windows | while IFS=$'\t' read -r id area title; do
+    printf '  %-10s %-8s %s\n' "$id" "${area}px" "$title"
   done
 }
 
@@ -219,12 +289,12 @@ cmd_shot() {
 }
 
 cmd_click() {
-  require_display
   local target="extension"
   if [[ "${1:-}" == "--target" ]]; then
     shift; target="${1:-}"; shift
   fi
   [[ $# -ge 2 ]] || die "Usage: $0 click [--target NAME] X Y   (coordinates are relative to the window)"
+  require_display
 
   local id geom win_x win_y coords
   id="$(resolve_window "$target")" || exit 1
@@ -239,19 +309,21 @@ cmd_click() {
 }
 
 cmd_type() {
-  require_display
   [[ $# -ge 1 ]] || die "Usage: $0 type TEXT"
+  require_display
   local id
   id="$(resolve_window extension)" || exit 1
-  DISPLAY="$NESTED_DISPLAY" xdotool windowactivate --sync "$id" type -- "$*"
+  # windowfocus, not windowactivate: there is no window manager inside Xephyr,
+  # so _NET_ACTIVE_WINDOW is unsupported and activate fails.
+  DISPLAY="$NESTED_DISPLAY" xdotool windowfocus --sync "$id" type -- "$*"
 }
 
 cmd_key() {
-  require_display
   [[ $# -ge 1 ]] || die "Usage: $0 key KEY [KEY...]   (e.g. Tab, Return, ctrl+a)"
+  require_display
   local id
   id="$(resolve_window extension)" || exit 1
-  DISPLAY="$NESTED_DISPLAY" xdotool windowactivate --sync "$id" key -- "$@"
+  DISPLAY="$NESTED_DISPLAY" xdotool windowfocus --sync "$id" key -- "$@"
 }
 
 usage() {
@@ -262,7 +334,7 @@ Runs Docker Desktop inside a nested X server so its UI can be screenshotted and
 clicked. Only Docker Desktop is affected; your desktop session stays as it is.
 
   start                      Start the nested display and move Docker Desktop into it
-  stop                       Move Docker Desktop back and stop the nested display
+  stop                       Tear down: nested display, extension dev mode, dev server
   status                     Show the nested display, drop-in and window list
   window [TARGET]            Print a window's id and geometry
   shot [--full] [FILE]       Screenshot the extension window (or the whole display)

@@ -114,7 +114,7 @@ sudo apt install xserver-xephyr xdotool imagemagick
 
 `shot` and `click` default to the extension webview, which is its own X window, so coordinates read off a screenshot can be passed straight to `click`. Use `--target dashboard` for Docker Desktop's own chrome and `--full` to capture the whole display.
 
-Xephyr is software-rendered, so Docker Desktop is slow inside it. Run `stop` when you are finished; it removes the systemd drop-in and restarts Docker Desktop on the normal display.
+Xephyr is software-rendered, so Docker Desktop is slow inside it. Run `stop` when you are finished. It tears down the whole dev setup: removes the systemd drop-in, restarts Docker Desktop on the normal display, stops Xephyr, resets the extension's `ui-source` and debug mode, and stops this checkout's Vite dev server. It only ever stops a Vite running out of this repo, so another project's dev server on the same port is left alone.
 
 Tests for the script are hermetic and need no display:
 

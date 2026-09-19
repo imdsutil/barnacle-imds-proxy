@@ -47,25 +47,19 @@ setup() {
 # --- window selection ---
 
 @test "pick_window_id prefers the extension webview over the dashboard" {
-  run bash -c "printf '%b\n' '4194305\tdashboard' '2097155\textension - Docker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id extension; }"
+  run bash -c "printf '%b\n' '4194305\t100\tdashboard' '2097155\t564000\textension - Docker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id extension; }"
   [ "$status" -eq 0 ]
   [ "$output" = "2097155" ]
 }
 
-@test "pick_window_id can select the dashboard explicitly" {
-  run bash -c "printf '%b\n' '4194305\tdashboard' '2097155\textension - Docker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id dashboard; }"
-  [ "$status" -eq 0 ]
-  [ "$output" = "4194305" ]
-}
-
 @test "pick_window_id fails loudly when the requested window is absent" {
-  run bash -c "printf '%b\n' '2097152\tChromium clipboard' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id extension; }"
+  run bash -c "printf '%b\n' '2097152\t100\tChromium clipboard' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id extension; }"
   [ "$status" -ne 0 ]
   [[ "$output" == *"extension"* ]]
 }
 
 @test "pick_window_id ignores the Chromium clipboard helper window" {
-  run bash -c "printf '%b\n' '2097152\tChromium clipboard' '2097155\textension - Docker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id any; }"
+  run bash -c "printf '%b\n' '2097152\t100\tChromium clipboard' '2097155\t564000\textension - Docker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id any; }"
   [ "$status" -eq 0 ]
   [ "$output" = "2097155" ]
 }
@@ -119,7 +113,7 @@ setup() {
 # even though the window was found, and the caller exited silently.
 
 @test "resolve_window succeeds under set -euo pipefail when the producer exits non-zero" {
-  run bash -c "set -euo pipefail; GUI_DEBUG_LIB=1 source '$SCRIPT'; list_windows() { printf '%b\n' '4194305\tdashboard' '2097155\textension - Docker Desktop'; return 1; }; resolve_window extension"
+  run bash -c "set -euo pipefail; GUI_DEBUG_LIB=1 source '$SCRIPT'; list_windows() { printf '%b\n' '4194305\t100\tdashboard' '2097155\t564000\textension - Docker Desktop'; return 1; }; resolve_window extension"
   [ "$status" -eq 0 ]
   [ "$output" = "2097155" ]
 }
@@ -127,4 +121,45 @@ setup() {
 @test "list_windows returns success even when the last window has no name" {
   run bash -c "set -euo pipefail; GUI_DEBUG_LIB=1 source '$SCRIPT'; xdotool() { case \"\$*\" in *search*) echo 111; echo 222 ;; *getwindowname*222*) echo '' ;; *getwindowname*111*) echo 'dashboard' ;; esac; }; export -f xdotool; list_windows >/dev/null; echo \"rc=\$?\""
   [ "$status" -eq 0 ]
+}
+
+# --- window selection against what Docker Desktop actually exposes ---
+#
+# Only one window is real. "dashboard" and "Chromium clipboard" are 10x10
+# placeholders, so picking the first non-clipboard entry returned a window that
+# cannot be screenshotted or clicked.
+
+@test "any picks the largest window, not the first non-clipboard one" {
+  run bash -c "printf '%b\n' '2097152\t100\tChromium clipboard' '4194305\t100\tdashboard' '2097155\t564000\textension - Docker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id any; }"
+  [ "$status" -eq 0 ]
+  [ "$output" = "2097155" ]
+}
+
+@test "dashboard resolves to the real window rather than the 10x10 placeholder" {
+  run bash -c "printf '%b\n' '4194305\t100\tdashboard' '2097155\t564000\tDocker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id dashboard; }"
+  [ "$status" -eq 0 ]
+  [ "$output" = "2097155" ]
+}
+
+@test "extension falls back to the largest window before the extension tab is opened" {
+  run bash -c "printf '%b\n' '4194305\t100\tdashboard' '2097155\t564000\tDocker Desktop' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id extension; }"
+  [ "$status" -eq 0 ]
+  [ "$output" = "2097155" ]
+}
+
+@test "no window big enough to interact with is reported as a failure" {
+  run bash -c "printf '%b\n' '2097152\t100\tChromium clipboard' '4194305\t100\tdashboard' | { GUI_DEBUG_LIB=1 source '$SCRIPT'; pick_window_id any; }"
+  [ "$status" -ne 0 ]
+}
+
+# --- teardown scope ---
+
+@test "is_repo_vite matches this repo's dev server only" {
+  run bash -c "GUI_DEBUG_LIB=1 source '$SCRIPT'; is_repo_vite \"node \$REPO_ROOT/ui/node_modules/.pnpm/vite@7/node_modules/vite/bin/vite.js\""
+  [ "$status" -eq 0 ]
+}
+
+@test "is_repo_vite does not match an unrelated vite elsewhere on the machine" {
+  run bash -c "GUI_DEBUG_LIB=1 source '$SCRIPT'; is_repo_vite 'node /home/someone/other-project/node_modules/vite/bin/vite.js'"
+  [ "$status" -ne 0 ]
 }
