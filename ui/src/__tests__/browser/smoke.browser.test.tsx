@@ -17,6 +17,7 @@
 import { expect, test } from "vitest";
 import { render } from "vitest-browser-react";
 import { DockerMuiV6ThemeProvider } from "@docker/docker-mui-theme";
+import { createDockerDesktopClient } from "@docker/extension-api-client";
 import { App } from "../../App";
 import { createFakeDdClient } from "./fakeDdClient";
 import { renderApp } from "./renderApp";
@@ -60,4 +61,10 @@ test("renderApp injects the fake into App", async () => {
   const screen = await renderApp(fake);
 
   await expect.element(screen.getByText("seeded-container")).toBeVisible();
+});
+
+test("renderApp's mock does not leak into a test that runs after it", async () => {
+  const result = createDockerDesktopClient();
+
+  expect(result).toBeUndefined();
 });

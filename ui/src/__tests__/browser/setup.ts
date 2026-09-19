@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { createDockerDesktopClient } from "@docker/extension-api-client";
 
 declare global {
   interface Window {
@@ -24,4 +25,8 @@ declare global {
 beforeEach(() => {
   window.__ddMuiV6Themes = { light: {}, dark: {} };
   window.__ddMuiV5Themes = { light: {}, dark: {} };
+});
+
+afterEach(() => {
+  vi.mocked(createDockerDesktopClient).mockReset();
 });
