@@ -89,6 +89,39 @@ pnpm run build    # Production build
 
 Note that `pnpm dev` runs a standalone Vite server, which is useful for working on the UI, but the Docker Desktop extension API calls won't work outside of Docker Desktop. You'll see an error on init. The build output is what actually gets packaged into the extension image.
 
+To point the installed extension at that dev server instead of its bundled build:
+
+```bash
+docker extension dev ui-source barnacle-imds-proxy http://localhost:3000
+docker extension dev debug barnacle-imds-proxy      # DevTools on each tab click
+docker extension dev reset barnacle-imds-proxy      # undo both
+```
+
+Until you reset, the extension tab depends on the dev server staying up. Note that `vite.config.ts` sets `strictPort`, so `pnpm dev` fails outright if something else already holds port 3000 rather than picking another one.
+
+## Debugging the extension inside Docker Desktop
+
+On a Wayland desktop, Docker Desktop's window is a native Wayland client, so no X tool can see or drive it. `scripts/gui-debug.sh` works around that by running Docker Desktop inside a nested X server, leaving your own session alone.
+
+```bash
+sudo apt install xserver-xephyr xdotool imagemagick
+
+./scripts/gui-debug.sh start           # nested display, Docker Desktop moved into it
+./scripts/gui-debug.sh shot out.png    # screenshot the extension window
+./scripts/gui-debug.sh click 163 192   # coordinates relative to that window
+./scripts/gui-debug.sh stop            # put everything back
+```
+
+`shot` and `click` default to the extension webview, which is its own X window, so coordinates read off a screenshot can be passed straight to `click`. Use `--target dashboard` for Docker Desktop's own chrome and `--full` to capture the whole display.
+
+Xephyr is software-rendered, so Docker Desktop is slow inside it. Run `stop` when you are finished. It tears down the whole dev setup: removes the systemd drop-in, restarts Docker Desktop on the normal display, stops Xephyr, resets the extension's `ui-source` and debug mode, and stops this checkout's Vite dev server. It only ever stops a Vite running out of this repo, so another project's dev server on the same port is left alone.
+
+Tests for the script are hermetic and need no display:
+
+```bash
+bats scripts/test-gui-debug.sh
+```
+
 ## Cross-platform testing
 
 The extension runs inside Docker Desktop's Linux VM, so most code is platform-agnostic. The main variables are Docker Desktop's networking implementation on each platform.
