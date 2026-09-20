@@ -61,7 +61,8 @@ Handles the IMDSv2 token endpoint, credentials and region in one server. Reads `
      # The client reads the role name here, then asks for that role's credentials
      BODY="$ROLE"
    elif [[ "$PATH_REQ" == */iam/security-credentials/"$ROLE" ]]; then
-     PROFILE=$(echo "$LABELS" | jq -r '.AWS_PROFILE // "default"')
+     PROFILE=$(echo "$LABELS" | jq -r '.AWS_PROFILE // empty')
+     PROFILE=${PROFILE:-default}
      CREDS=$(AWS_PROFILE=$PROFILE aws sts get-session-token --query Credentials --output json)
      BODY=$(echo "$CREDS" | jq -c '{Code:"Success",Type:"AWS-HMAC",
        AccessKeyId:.AccessKeyId,SecretAccessKey:.SecretAccessKey,
@@ -518,7 +519,9 @@ One server handles both AWS and Azure. It routes by the `CLOUD_PROVIDER` contain
      [[ "${h,,}" == x-container-labels:* ]] && LABELS="${h#*: }"
    done
 
-   PROVIDER=$(echo "$LABELS" | jq -r '.CLOUD_PROVIDER // "aws"')
+   # jq emits nothing when the labels header is absent, so // does not default here
+   PROVIDER=$(echo "$LABELS" | jq -r '.CLOUD_PROVIDER // empty')
+   PROVIDER=${PROVIDER:-aws}
    CTYPE="application/json"
    STATUS="200 OK"
    BODY=""
@@ -536,7 +539,8 @@ One server handles both AWS and Azure. It routes by the `CLOUD_PROVIDER` contain
      BODY="$ROLE"
      CTYPE="text/plain"
    elif [[ "$PATH_REQ" == */iam/security-credentials/"$ROLE" && "$PROVIDER" == "aws" ]]; then
-     PROFILE=$(echo "$LABELS" | jq -r '.AWS_PROFILE // "default"')
+     PROFILE=$(echo "$LABELS" | jq -r '.AWS_PROFILE // empty')
+     PROFILE=${PROFILE:-default}
      CREDS=$(AWS_PROFILE=$PROFILE aws sts get-session-token --query Credentials --output json)
      BODY=$(echo "$CREDS" | jq -c '{Code:"Success",Type:"AWS-HMAC",
        AccessKeyId:.AccessKeyId,SecretAccessKey:.SecretAccessKey,
