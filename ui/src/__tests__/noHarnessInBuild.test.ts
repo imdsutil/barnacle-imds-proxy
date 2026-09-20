@@ -27,6 +27,19 @@ import { expect, test } from "vitest";
 //    *assigning* a fake theme object. Real app code only ever *reads*
 //    window.__ddMuiV6Themes (e.g. `window.__ddMuiV6Themes[...]`), so this
 //    pattern will not false-positive on legitimate MUI theme lookups.
+// Positive control: if someone reworks the throw in fakeDdClient.ts and
+// rewords this marker, the build-scanning test below would keep passing
+// forever with half its power gone, silently. This asserts the marker is
+// still present in the harness source so a rewording fails loudly here
+// instead.
+test("the harness source still contains the unexpected-GET marker string", () => {
+  const source = readFileSync(
+    join(process.cwd(), "src", "__tests__", "browser", "fakeDdClient.ts"),
+    "utf8",
+  );
+  expect(source).toContain("fake: unexpected GET");
+});
+
 test("the production bundle contains no harness code", () => {
   execSync("pnpm build", { cwd: process.cwd(), stdio: "pipe" });
 

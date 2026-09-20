@@ -159,8 +159,23 @@ test(
     await tabUntilFocused(row, 12);
     expect(document.activeElement).toBe(row);
 
+    // Expected controls and their accessible names are fixed here, from the
+    // "alpha" fixture above, rather than read off the row under test: if a
+    // control (e.g. the copy-id IconButton) were deleted from
+    // ContainersTable, this list would still have 4 entries and the
+    // toHaveLength/name checks below would fail instead of silently passing.
+    const expectedControlNames = [
+      "Copy container name alpha",
+      "Copy container id aaaaaaaaaaaa",
+      "Connected",
+      "Expand labels",
+    ];
     const controls = row.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
-    expect(controls.length).toBeGreaterThan(0);
+    expect(controls.length).toBe(expectedControlNames.length);
+    controls.forEach((control, i) => {
+      const name = control.getAttribute("aria-label") ?? control.textContent?.trim();
+      expect(name).toBe(expectedControlNames[i]);
+    });
     for (const control of controls) {
       await userEvent.tab();
       expect(document.activeElement).toBe(control);
@@ -305,6 +320,12 @@ async function auditFor(node: HTMLElement) {
 // selector used in this file (the 4.9, 4.10/4.11, 4.13-4.15 and 4.16/4.17
 // tests above) and in containers.browser.test.tsx:55, since both rely on
 // aria-expanded staying on the <tr>.
+//
+// Note: the WCAG A/AA tags include color-contrast, and this harness seeds
+// window.__ddMuiV6Themes with empty theme objects, so MUI falls back to its
+// own default palette here rather than Docker Desktop's real one. A "no
+// violations" result from this audit is only a claim about MUI's defaults,
+// not the colors a user actually sees.
 test.skip("the containers tab has no WCAG A or AA violations", async () => {
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
@@ -317,6 +338,12 @@ test.skip("the containers tab has no WCAG A or AA violations", async () => {
 // "button-name: Buttons must have discernible text (1 nodes)", pointing at
 // that one button. Fixing it means changing SettingsForm.tsx, which is out
 // of scope for this task.
+//
+// Note: the WCAG A/AA tags include color-contrast, and this harness seeds
+// window.__ddMuiV6Themes with empty theme objects, so MUI falls back to its
+// own default palette here rather than Docker Desktop's real one. A "no
+// violations" result from this audit is only a claim about MUI's defaults,
+// not the colors a user actually sees.
 test.skip("the settings tab has no WCAG A or AA violations", async () => {
   const screen = await renderApp(createFakeDdClient());
   await userEvent.click(screen.getByRole("tab", { name: /settings/i }));

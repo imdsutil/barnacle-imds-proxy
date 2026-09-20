@@ -34,13 +34,13 @@ test("a running proxy shows no alert", async () => {
   expect(screen.container.querySelector('[role="alert"]')).toBeNull();
 });
 
-// Skipped: reproduces issue #64's sibling defect at App.tsx:134. A malformed
-// /containers response never increments consecutiveFailuresRef, so the app
-// never enters the same backend-unreachable state a real failed request
-// would after UNREACHABLE_THRESHOLD ticks; it just fires a fresh error
-// snackbar (autoHideDuration null) on every poll tick instead. This asserts
-// the unreachable banner, not just "an alert exists". Confirmed failing
-// today (timed out waiting for the banner). Remove .skip when fixed.
+// Skipped: issue #75. A malformed /containers response never increments
+// consecutiveFailuresRef, so the app never enters the same
+// backend-unreachable state a real failed request would after
+// UNREACHABLE_THRESHOLD ticks; it just fires a fresh error snackbar
+// (autoHideDuration null) on every poll tick instead. This asserts the
+// unreachable banner, not just "an alert exists". Confirmed failing today
+// (timed out waiting for the banner). Remove .skip when fixed.
 test.skip("a malformed containers response drives the app into the unreachable state", async () => {
   const fake = createFakeDdClient({ containers: { totally: "wrong" } });
   const screen = await renderApp(fake);
@@ -51,10 +51,11 @@ test.skip("a malformed containers response drives the app into the unreachable s
     .toBeVisible();
 });
 
-// Skipped: issue #65. Both type guards are shape only and there is no error
+// Skipped: issue #74. Both type guards are shape only and there is no error
 // boundary, so one malformed element blanks the panel. Confirmed failing
-// today (ContainersTable throws "Cannot read properties of undefined
-// (reading 'startsWith')" and React unmounts the tree). Remove .skip when fixed.
+// today (cleanContainerName in containerUtils.ts:25 throws "Cannot read
+// properties of undefined (reading 'startsWith')" and React unmounts the
+// tree). Remove .skip when fixed.
 test.skip("a malformed container element does not blank the panel", async () => {
   const fake = createFakeDdClient({ containers: { containers: [{}] }, proxyStatus: "running" });
   const screen = await renderApp(fake);

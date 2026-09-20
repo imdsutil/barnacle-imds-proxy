@@ -126,7 +126,11 @@ docker run -d --rm --name test-imds-2 --label imds-proxy.enabled=true alpine sle
 ### Keyboard accessibility
 
 Automated in `ui/src/__tests__/browser/a11y.browser.test.tsx` (checks
-4.9-4.17).
+4.9-4.17). The WCAG A/AA audits in that file (currently `test.skip` pending
+issues #70 and #71) include a color-contrast check that runs against MUI's
+default palette, since the harness seeds `window.__ddMuiV6Themes` with empty
+theme objects rather than Docker Desktop's real ones; once unskipped, a
+passing audit says nothing about the colors a user actually sees.
 
 ---
 
