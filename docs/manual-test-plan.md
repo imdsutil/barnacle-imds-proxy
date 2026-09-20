@@ -4,30 +4,57 @@ Run on each platform: **macOS**, **Windows**, **Linux**.
 
 ---
 
-## Before a release
+## What to test by hand
 
-Most of this plan is automated in `ui/src/__tests__/browser/`, run by `make test`.
-The sections below point to the file that covers each one and list what is
-left, including a few checks the browser suite cannot exercise at all
-(hover-only visuals, real mouse clicks on already keyboard-tested controls,
-and item counts) and five that are disabled pending open issues.
+Everything else is covered by `make test` (the browser suite in
+`ui/src/__tests__/browser/`) or `scripts/test-e2e.sh`. This is the complete
+list of what still needs a person, and why.
 
-Four things the browser suite can never cover, regardless of what else gets
-automated:
+### Docker Desktop shell
 
-1. The extension tab appears in Docker Desktop and opens.
-2. Settings save and reload correctly against the real backend, which proves the
-   real `@docker/extension-api-client` transport still matches the fake.
-3. Light and dark mode look right, which the suite cannot prove because it
-   supplies stub theme objects rather than Docker Desktop's real ones.
-4. Copying a container name or id actually places it on the system clipboard.
-   `navigator.clipboard.writeText` always rejects in headless Chromium under
-   Playwright, with NotAllowedError, even after granting the CDP clipboard
-   permissions. The browser suite therefore stubs `writeText` and exercises the
-   click, the handler wiring and the snackbar, but never a real clipboard write.
+| Action | Expected | Why it's manual |
+|--------|----------|------------------|
+| Open Docker Desktop, find the extension tab, open it | Extension tab appears and opens | The browser suite runs outside Docker Desktop; it can't prove the tab shows up there |
+| Switch Docker Desktop → Settings → Appearance to light mode, then dark mode. Check text, backgrounds, and alerts in each | Everything is legible in both modes | The suite seeds stub theme objects (`window.__ddMuiV6Themes` set to empty objects), not Docker Desktop's real palette |
+| Tab through the UI in both light and dark mode | Focus rings are clearly visible against the background in both | Same stub-theme limitation as above |
 
-`scripts/gui-debug.sh` drives the real extension if you want to do these without
-clicking. The rest of this document lists what each section still needs by hand.
+### Containers tab
+
+Requires two labeled containers running (see Prerequisites) and at least one
+configured IP in Settings.
+
+| Action | Expected | Why it's manual |
+|--------|----------|------------------|
+| With no labeled containers running, check the bottom-right count; then start labeled containers and check again | Count reads "Showing 0 items", then updates as containers appear | Item counts aren't asserted by the suite |
+| Hover a container row | Name copy and ID copy icons appear | Hover-only visual, not observable headless |
+| Click the label hint code element with the mouse; hover over it | Snackbar "Copied label to clipboard", clipboard has `imds-proxy.enabled=true`; background darkens on hover | Only the keyboard path (Enter/Space) on this element is covered; hover isn't observable headless |
+| Click the ID copy icon with the mouse | Snackbar "Copied container ID to clipboard", clipboard has the full ID | Only the name-copy icon is covered by a real click test; ID copy isn't |
+| Click a row to expand it, click again to collapse, then click the expand arrow directly | Row toggles each time, without triggering name/ID copy | Only keyboard-driven expand/collapse is covered; real mouse clicks aren't |
+| Copy a container name or ID and paste it somewhere | The real system clipboard has the value | `navigator.clipboard.writeText` always rejects in headless Chromium under Playwright (NotAllowedError), so the suite stubs `writeText` and never performs a real write |
+| Run an accessibility audit (e.g. axe DevTools) against the Containers tab | No violations other than the known `aria-expanded` on a `<tr>` element | The automated WCAG audit is `test.skip`, pending issue #70 |
+
+### Settings tab
+
+| Action | Expected | Why it's manual |
+|--------|----------|------------------|
+| Enter a URL, click Save, confirm it against the real Docker Desktop backend | Setting saves and reloads correctly | Proves the real `@docker/extension-api-client` transport still matches the fake one the suite uses; the suite itself can't reach a real backend |
+| Save a URL, switch to the Containers tab, switch back to Settings | The previously saved URL is still shown | No browser test switches tabs and back to check this |
+| While on the Settings tab, run the external settings-update command from the Prerequisites | URL field updates to the new value within ~5 seconds, no skeleton flicker | Not exercised by the suite |
+| Edit the URL field without saving, then run the external settings-update command | The unsaved edit is NOT overwritten | Disabled: `test.skip("a settings poll does not overwrite text being typed", ...)` in `settings.browser.test.tsx`, pending issue #77 |
+| Stop the controller (`docker stop imds-proxy-controller`) to reach the backend-unreachable state, then edit the URL field | Field reverts to the previously saved value after a few seconds (current behavior; itself under discussion) | Disabled: `test.skip` in `proxyState.browser.test.tsx`, pending issue #77 |
+| Run an accessibility audit (e.g. axe DevTools) against the Settings tab | No violations other than the known missing accessible name on the "add IP address" button | The automated WCAG audit is `test.skip`, pending issue #71 |
+
+### Header
+
+| Action | Expected | Why it's manual |
+|--------|----------|------------------|
+| Click "View documentation" | GitHub repo opens in the system browser, not inside Docker Desktop | The suite can assert `host.openExternal` is called with the right URL, but not that Docker Desktop actually hands off to the system browser |
+
+Proxy traffic (originally section 13) needs no GUI and isn't part of this
+checklist; it's covered by `scripts/test-e2e.sh`.
+
+`scripts/gui-debug.sh` drives the real extension in a nested display if you
+want to do any of the above without a physical Docker Desktop window.
 
 ---
 
@@ -41,9 +68,45 @@ clicking. The rest of this document lists what each section still needs by hand.
   docker run --rm -p 8080:8080 -e HTTP_PORT=8080 mendhak/http-https-echo:latest
   ```
 
-  This echoes every request back as JSON including all headers, so you can verify `X-Container-Id`, `X-Container-Name`, and label headers arrive correctly. Keep this terminal visible while testing section 13.
+  This echoes every request back as JSON including all headers, so you can verify `X-Container-Id`, `X-Container-Name`, and label headers arrive correctly.
+
+- Two labeled containers, for the Containers tab checks:
+
+  ```shell
+  docker run -d --rm --name test-imds-1 --label imds-proxy.enabled=true alpine sleep 3600
+  docker run -d --rm --name test-imds-2 --label imds-proxy.enabled=true alpine sleep 3600
+  ```
+
+- The external settings-update command, for the Settings tab checks:
+
+  zsh/bash:
+  ```shell
+  docker exec imds-proxy-controller \
+    curl -sf --unix-socket /run/guest-services/backend.sock \
+    -X POST -H 'Content-Type: application/json' \
+    -d '{"url":"http://localhost:9999"}' \
+    http://localhost/settings
+  ```
+
+  PowerShell:
+  ```powershell
+  docker exec imds-proxy-controller curl -sf --unix-socket /run/guest-services/backend.sock -X POST -H "Content-Type: application/json" -d '{\"url\":\"http://localhost:9999\"}' http://localhost/settings
+  ```
+
+Cleanup when done:
+
+```shell
+docker rm -f test-imds-1 test-imds-2
+```
 
 ---
+
+# Reference: what the automated suite covers
+
+The sections below are **not a checklist**. They record which test file
+covers which check, section by section, for auditing coverage or when
+changing that code. Anything that still needs a human is in "What to test by
+hand" above, not here.
 
 ## 1. Initial load
 
@@ -192,6 +255,14 @@ sort implementation or the table's markup.
 the four abnormal statuses produces a visible `role="alert"`, but not the
 alert's wording, its action button, or what happens when that button is
 clicked.
+
+Two other tests in this file are `test.skip` and don't correspond to a
+numbered check below: a malformed `/containers` response should drive the
+app into the same backend-unreachable state as a real failed request but
+doesn't (issue #75), and a single malformed container element blanks the
+whole panel instead of being skipped over (issue #74). Both are type-guard
+robustness bugs with no way to reproduce them through the GUI, so they stay
+tracked on their issues rather than appearing as manual steps here.
 
 ### 7a. Stopped
 
@@ -356,7 +427,7 @@ Automated in `ui/src/__tests__/browser/appearance.browser.test.tsx`.
 under each `prefers-color-scheme` and that the scheme signal reaches the
 page, using stub theme objects (`window.__ddMuiV6Themes` set to empty
 objects). It proves nothing about actual colours, contrast, or focus ring
-visibility, which stay manual (also listed in the smoke list at the top of
+visibility, which stay manual (also listed in the checklist at the top of
 this document).
 
 Switch in Docker Desktop → Settings → Appearance.
@@ -397,14 +468,6 @@ docker run --rm alpine wget -qO- --timeout=3 http://169.254.169.254/status
 | 13.2 | IPv6 EC2 request from labeled container | Response from IMDS server |
 | 13.3 | IPv6 OpenStack request from labeled container | Response from IMDS server |
 | 13.4 | Any request from unlabeled container | Connection refused or no route to host |
-
----
-
-## Cleanup
-
-```shell
-docker rm -f test-imds-1 test-imds-2
-```
 
 ---
 
