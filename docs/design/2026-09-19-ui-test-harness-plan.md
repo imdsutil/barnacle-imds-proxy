@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Automate the UI-only sections of `docs/manual-test-plan.md` so they run on every PR, leaving a three item human smoke list.
+**Goal:** Automate the UI-only sections of `docs/manual-test-plan.md` so they run on every PR, leaving a short human smoke list.
 
 **Architecture:** Vitest browser mode renders the real `App` in a real Chromium. A controllable fake supplies the four Docker Desktop APIs the UI uses, and a setup file supplies the theme global the MUI provider reads. Browser tests live in their own vitest project alongside the existing jsdom suite, so both run from one runner and one CI job.
 
@@ -30,6 +30,8 @@ Vitest browser mode mounts components directly, so a test controls the fake by i
 
 Four behaviours the spec wants covered are currently broken, tracked in issues #64 and #65. Tests for them are written in this plan but marked `.skip` with the issue number in a comment, so the suite lands green and the fix PR just removes the `.skip`. Do not "fix" the component to make them pass; that is separate work.
 
+**A skipped test must be confirmed failing today.** Before marking one `.skip`, run it un-skipped and record the result. A test that passes today captures nothing: the fix PR un-skips it, sees green, and concludes the bug is gone. If a skipped test passes today, it is asserting a side effect rather than the defect and must be rewritten against the defect itself.
+
 ## File structure
 
 | File | Responsibility |
@@ -41,7 +43,7 @@ Four behaviours the spec wants covered are currently broken, tracked in issues #
 | `ui/src/__tests__/browser/proxyState.browser.test.tsx` | Sections 5, 7a-d, 8 |
 | `ui/src/__tests__/browser/settings.browser.test.tsx` | Section 9 |
 | `ui/src/__tests__/browser/appearance.browser.test.tsx` | Sections 11, 12 |
-| `ui/src/__tests__/browser/a11y.browser.test.tsx` | Keyboard checks 4.9-4.17 and 9.10-9.14, plus axe-core audits |
+| `ui/src/__tests__/browser/a11y.browser.test.tsx` | Keyboard checks 1.5-1.8, 4.9-4.17 and 9.10-9.14, plus axe-core audits |
 | `ui/src/__tests__/noHarnessInBuild.test.ts` | Asserts the fake never reaches a production bundle |
 | `ui/vite.config.ts` | Adds the browser test project |
 | `.github/workflows/ci.yml` | Installs Chromium, runs the browser suite |
@@ -207,6 +209,14 @@ These were verified against the running setup and are not open to reinterpretati
 - Every browser test file starts with `/// <reference types="@vitest/browser/matchers" />` above the imports, or `toBeVisible` will not type-check.
 - `ui/src/__tests__/browser/vitest-browser.d.ts` is an ambient type shim that exists because the project uses `moduleResolution: "Node"`, which ignores package `exports` maps. Leave it alone; do not edit `tsconfig.json`.
 - The vitest projects are named `unit` and `browser`.
+- **`page.emulateMedia` does not exist in `@vitest/browser` 4.1.11.** Control colour scheme through the Playwright provider's CDP session: `cdp()` imported from `vitest/browser` (not the deprecated `@vitest/browser/context`), then `Emulation.setEmulatedMedia` with the `prefers-color-scheme` feature. Reset to `no-preference` in an `afterEach` local to the file.
+- **`UNREACHABLE_THRESHOLD` is 2.** One `failNext` is not enough to produce the backend-unreachable banner; the failure must be armed for the mount request and again for the first poll tick.
+- **`getByDisplayValue` does not exist on vitest-browser locators.** Assert an input's value with `expect.element(screen.getByLabelText(...)).toHaveValue(...)`.
+- **Fake timers are not viable in Playwright browser mode.** Wait on polled behaviour with `expect.element(..., { timeout: N })` or `expect.poll`, never a bare sleep. A sleep long enough to cross a poll tick still does not reproduce a mid-flight race: to hit one, intercept the request and hold it in flight.
+- **`ProxyContainerState` is `running | paused | stopped | failed | missing`.** There is no `crashed` status; the enum value is `failed` and only its rendered alert text says "has crashed".
+- **The container fixture shape, verified against `ContainerInfo` in `ui/src/types.ts` and the existing `testHelpers.ts`:** the id field is `containerId` (not `id`), an address is `{ ip, connected }` (not `{ address, connected }`), and there is no `networks` field. The plan's first draft had all three wrong.
+- **`ContainersTable` renders two `<tr>` per container**, a data row plus a collapse row. Select data rows with `tbody tr[aria-expanded]`; a bare `tbody tr` double counts.
+- **Seed `proxyStatus` at the top level of `createFakeDdClient`, never nested inside `containers`.** The fake returns `{ ...value, proxyStatus: state.proxyStatus }`, so a nested `proxyStatus` is always overwritten by the top-level field, which defaults to `"running"`. Nesting it makes a test silently assert against `"running"` instead of the status it named.
 
 ---
 
@@ -419,12 +429,11 @@ import { expect, test } from "vitest";
 import { createFakeDdClient } from "./fakeDdClient";
 import { renderApp } from "./renderApp";
 
-const container = (name: string, id: string, ip = "169.254.169.254") => ({
+const container = (name: string, containerId: string, ip = "169.254.169.254") => ({
   name,
-  id,
+  containerId,
   labels: { "imds-proxy.enabled": "true" },
-  addresses: [{ address: ip, connected: true }],
-  networks: [],
+  addresses: [{ ip, connected: true }],
 });
 
 test("empty state tells the user no labeled containers are running", async () => {
@@ -511,14 +520,14 @@ import { renderApp } from "./renderApp";
 test.each(["stopped", "paused", "crashed", "missing"])(
   "proxy status %s produces a visible alert",
   async (status) => {
-    const fake = createFakeDdClient({ containers: { containers: [], proxyStatus: status } });
+    const fake = createFakeDdClient({ proxyStatus: status });
     const screen = await renderApp(fake);
     await expect.element(screen.getByRole("alert")).toBeVisible();
   }
 );
 
 test("a running proxy shows no alert", async () => {
-  const fake = createFakeDdClient({ containers: { containers: [], proxyStatus: "running" } });
+  const fake = createFakeDdClient({ proxyStatus: "running" });
   const screen = await renderApp(fake);
   await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
   expect(screen.container.querySelector('[role="alert"]')).toBeNull();
@@ -536,7 +545,7 @@ test.skip("a malformed containers response does not loop an undismissable error"
 // Skipped: issue #65. Both type guards are shape only and there is no error
 // boundary, so one malformed element blanks the panel. Remove .skip when fixed.
 test.skip("a malformed container element does not blank the panel", async () => {
-  const fake = createFakeDdClient({ containers: { containers: [{}], proxyStatus: "running" } });
+  const fake = createFakeDdClient({ containers: { containers: [{}] }, proxyStatus: "running" });
   const screen = await renderApp(fake);
   await expect.element(screen.getByText("Barnacle IMDS Proxy")).toBeVisible();
 });
@@ -696,7 +705,7 @@ git commit -m "test: cover snackbars and colour schemes in a real browser"
 
 ### Task 7: Keyboard accessibility and axe audits
 
-The manual test plan has fourteen keyboard checks that no other task covers: 4.9 to 4.17 under section 4, and 9.10 to 9.14 under section 9. These are the checks that most need a real browser, because jsdom does not model focus order or key handling faithfully.
+The manual test plan has eighteen keyboard checks that no other task covers: 1.5 to 1.8 under section 1, 4.9 to 4.17 under section 4, and 9.10 to 9.14 under section 9. These are the checks that most need a real browser, because jsdom does not model focus order or key handling faithfully.
 
 **Files:**
 - Create: `ui/src/__tests__/browser/a11y.browser.test.tsx`
@@ -706,7 +715,11 @@ The manual test plan has fourteen keyboard checks that no other task covers: 4.9
 - Consumes: `createFakeDdClient`, `renderApp` from Task 2.
 - Produces: nothing other tasks depend on.
 
-**If a check fails because the component lacks the behaviour:** that is a real accessibility bug, not a test to bend. Mark that single test `.skip` with a comment saying what is missing, note it in your report, and keep going. Do not modify any component to make a check pass.
+**These checks are expected to pass.** The maintainer has been running them manually and they have been passing, so a red test is evidence about the test before it is evidence about the component. Debug the test first: wrong selector, wrong starting element, a missing await, or tabbing from the wrong place are all likelier than a regression in behaviour a human checks by hand.
+
+**If a check genuinely fails because the component lacks the behaviour:** that is a real accessibility bug, not a test to bend. Demonstrate the absence by pointing at the component line that proves it, mark that single test `.skip` with a comment saying what is missing, note it in your report, and keep going. Do not modify any component to make a check pass.
+
+This does not apply to the axe audits. Manual keyboard testing would not surface contrast ratios, ARIA misuse or unlabelled controls, so axe may legitimately find violations that manual checks never would.
 
 - [ ] **Step 1: Install axe-core**
 
@@ -724,12 +737,11 @@ import { userEvent } from "@vitest/browser/context";
 import { createFakeDdClient } from "./fakeDdClient";
 import { renderApp } from "./renderApp";
 
-const container = (name: string, id: string) => ({
+const container = (name: string, containerId: string) => ({
   name,
-  id,
+  containerId,
   labels: { "imds-proxy.enabled": "true" },
-  addresses: [{ address: "169.254.169.254", connected: true }],
-  networks: [],
+  addresses: [{ ip: "169.254.169.254", connected: true }],
 });
 
 const withRows = () =>
@@ -740,12 +752,40 @@ const withRows = () =>
     },
   });
 
+// 1.5, 1.6: the header is reachable and the docs link takes visible focus.
+test("the documentation link is reachable by keyboard", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  const link = screen.getByRole("link", { name: /documentation/i });
+  const el = link.query() as HTMLElement;
+  el.focus();
+  expect(document.activeElement).toBe(el);
+});
+
+// 1.7: both tabs are reachable by keyboard.
+test("both tabs are reachable by keyboard", async () => {
+  const screen = await renderApp(createFakeDdClient());
+  for (const name of [/containers/i, /settings/i]) {
+    const el = screen.getByRole("tab", { name }).query() as HTMLElement;
+    el.focus();
+    expect(document.activeElement).toBe(el);
+  }
+});
+
+// 1.8: Enter and Space on a focused tab switch to it.
+test.each(["{Enter}", " "])("pressing %s on the settings tab switches to it", async (key) => {
+  const screen = await renderApp(createFakeDdClient());
+  const el = screen.getByRole("tab", { name: /settings/i }).query() as HTMLElement;
+  el.focus();
+  await userEvent.keyboard(key);
+  await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
+});
+
 // 4.9: a row takes visible focus when tabbed to.
 test("a container row is reachable by keyboard and shows focus", async () => {
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const row = screen.container.querySelector("tbody tr") as HTMLElement;
+  const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
   row.focus();
   expect(document.activeElement).toBe(row);
 });
@@ -755,11 +795,11 @@ test.each(["{Enter}", " "])("pressing %s on a focused row toggles it", async (ke
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const row = screen.container.querySelector("tbody tr") as HTMLElement;
+  const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
   row.focus();
-  const before = screen.container.querySelectorAll("tbody tr").length;
+  const before = screen.container.querySelectorAll("tbody tr[aria-expanded]").length;
   await userEvent.keyboard(key);
-  await expect.poll(() => screen.container.querySelectorAll("tbody tr").length).not.toBe(before);
+  await expect.poll(() => screen.container.querySelectorAll("tbody tr[aria-expanded]").length).not.toBe(before);
 });
 
 // 4.13, 4.14, 4.15: the per-row controls are focusable and Enter-activated.
@@ -767,7 +807,7 @@ test("every interactive control in a row is reachable by keyboard", async () => 
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const row = screen.container.querySelector("tbody tr") as HTMLElement;
+  const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
   const controls = row.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
   expect(controls.length).toBeGreaterThan(0);
   for (const control of controls) {
@@ -781,7 +821,7 @@ test("tabbing moves forward out of a row and shift-tab moves back", async () => 
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const first = screen.container.querySelector("tbody tr") as HTMLElement;
+  const first = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
   first.focus();
   const start = document.activeElement;
 
@@ -1010,6 +1050,12 @@ git commit -m "test: assert harness code never reaches a production bundle"
 - Consumes: everything above.
 - Produces: nothing.
 
+- [ ] **Step 0: Correct two inaccurate manual checks**
+
+Checks 1.7 and 9.10 say to Tab to a tab ("Tab to the tab bar", "Tab to Settings tab, press Enter"). MUI Tabs implement the standard ARIA roving tabindex pattern: Tab moves into the tablist and lands on the selected tab, Arrow keys move between tabs, and Tab again leaves the tablist. You cannot Tab directly to the Settings tab, so following 9.10 literally never reaches it.
+
+Reword both to describe the real pattern, for example "Tab into the tab bar, then press Right Arrow to reach Settings and Enter to activate it". This was found by automating them in Task 7, where the tests had to model the roving tabindex to pass.
+
 - [ ] **Step 1: Replace the automated sections**
 
 Sections 1, 2, 3, 4, 5, 6, 7a-d, 8, 9, 11 and 12 are now covered by `ui/src/__tests__/browser/`. Replace each with a one line pointer to the covering file, keeping the section headings so existing links do not break.
@@ -1024,13 +1070,18 @@ Add at the top of `docs/manual-test-plan.md`, after the title:
 ## Before a release
 
 Most of this plan is automated in `ui/src/__tests__/browser/`, run by `make test`.
-Three things the browser suite cannot cover remain manual:
+Four things the browser suite cannot cover remain manual:
 
 1. The extension tab appears in Docker Desktop and opens.
 2. Settings save and reload correctly against the real backend, which proves the
    real `@docker/extension-api-client` transport still matches the fake.
 3. Light and dark mode look right, which the suite cannot prove because it
    supplies stub theme objects rather than Docker Desktop's real ones.
+4. Copying a container name or id actually places it on the system clipboard.
+   `navigator.clipboard.writeText` always rejects in headless Chromium under
+   Playwright, with NotAllowedError, even after granting the CDP clipboard
+   permissions. The browser suite therefore stubs `writeText` and exercises the
+   click, the handler wiring and the snackbar, but never a real clipboard write.
 
 `scripts/gui-debug.sh` drives the real extension if you want to do these without
 clicking. The rest of this document is reference for what the suite covers.
@@ -1067,7 +1118,7 @@ git commit -m "docs: reduce the manual test plan to a three item smoke list"
 
 ## Self-review notes
 
-**Spec coverage.** The keyboard subsections of sections 4 and 9 (checks 4.9-4.17 and 9.10-9.14) are Task 7, added after a first pass mapped coverage by section number and missed them. Sections 1, 2, 3, 4, 6 in Task 3. Sections 5, 7a-d, 8 in Task 4. Section 9 in Task 5. Sections 11, 12 in Task 6. Section 10 and the two integration items stay manual per Task 9. Section 13 stays with `test-e2e.sh`. The theme global from the spec's verified findings is Task 1. The leak guard is Task 8.
+**Spec coverage.** The keyboard subsections of sections 4 and 9 (checks 1.5-1.8, 4.9-4.17 and 9.10-9.14) are Task 7, added after a first pass mapped coverage by section number and missed them. Sections 1, 2, 3, 4, 6 in Task 3. Sections 5, 7a-d, 8 in Task 4. Section 9 in Task 5. Sections 11, 12 in Task 6. Section 10 and the two integration items stay manual per Task 9. Section 13 stays with `test-e2e.sh`. The theme global from the spec's verified findings is Task 1. The leak guard is Task 8.
 
 **Deliberately not built.** `window.__harness`, for the reason in the Deviation section.
 
