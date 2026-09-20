@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -868,4 +869,173 @@ func TestStressForwardURLAtomicOperations(t *testing.T) {
 
 	finalURL := getForwardURL()
 	t.Logf("Final forward URL after stress: %s", finalURL)
+}
+
+// A container whose first request beats the backend's IP indexing must recover
+// on a retry instead of staying broken for the full cache TTL.
+func TestNegativeLookupDoesNotOutliveShortRetry(t *testing.T) {
+	ensureClearCache(t)
+
+	fixedNow := time.Date(2026, 2, 14, 0, 0, 0, 0, time.UTC)
+	mockTime(t, fixedNow)
+
+	ip := "10.0.0.20"
+	indexed := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !indexed {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		data, _ := json.Marshal(lookupResponse{ContainerID: "abc", Name: "svc"})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	originalDial := backendDial
+	backendDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	defer func() { backendDial = originalDial }()
+
+	// First request loses the race: the backend has not indexed the IP yet.
+	resp, err := lookupContainerByIP(context.Background(), ip)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != nil {
+		t.Fatalf("want nil response before indexing, got %#v", resp)
+	}
+
+	// The container retries two seconds later, after indexing has completed.
+	indexed = true
+	now = func() time.Time { return fixedNow.Add(2 * time.Second) }
+
+	resp, err = lookupContainerByIP(context.Background(), ip)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatalf("want container found on retry, got nil: the negative result was cached too long")
+	}
+	if resp.ContainerID != "abc" {
+		t.Fatalf("want container abc, got %#v", resp)
+	}
+}
+
+// Negative entries are keyed by IP, so they must not survive a container going
+// away. Otherwise the next container to reuse that IP inherits the failure.
+func TestHandleContainerDestroyedClearsNegativeEntries(t *testing.T) {
+	ensureClearCache(t)
+
+	lookupCache.Store("169.254.169.20", cacheEntry{
+		response:  nil,
+		found:     false,
+		expiresAt: time.Now().Add(5 * time.Minute),
+	})
+
+	payload, _ := json.Marshal(containerDestroyedRequest{ContainerID: "abc"})
+	req := httptest.NewRequest(http.MethodPost, "/container-destroyed", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handleContainerDestroyed(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status %d (%s), got %d (%s)", http.StatusOK, http.StatusText(http.StatusOK), rec.Code, http.StatusText(rec.Code))
+	}
+
+	if _, ok := lookupCache.Load("169.254.169.20"); ok {
+		t.Fatalf("want negative cache entry removed so a new container reusing the IP is looked up fresh")
+	}
+}
+
+// The backend indexes a container's IP a moment after the container starts, so
+// a container's very first request can legitimately miss. One retry closes that
+// window instead of failing the request that the SDK makes on startup.
+func TestLookupRetriesOnceBeforeReportingNotFound(t *testing.T) {
+	ensureClearCache(t)
+
+	fixedNow := time.Date(2026, 2, 14, 0, 0, 0, 0, time.UTC)
+	mockTime(t, fixedNow)
+
+	originalDelay := lookupRetryDelay
+	lookupRetryDelay = 0
+	t.Cleanup(func() { lookupRetryDelay = originalDelay })
+
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// The first call arrives before indexing has completed.
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		data, _ := json.Marshal(lookupResponse{ContainerID: "abc", Name: "svc"})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	originalDial := backendDial
+	backendDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	defer func() { backendDial = originalDial }()
+
+	resp, err := lookupContainerByIP(context.Background(), "10.0.0.21")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatalf("want container found after retry, got nil")
+	}
+	if resp.ContainerID != "abc" {
+		t.Fatalf("want container abc, got %#v", resp)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("want 2 backend calls (initial plus one retry), got %d", got)
+	}
+}
+
+// A container that genuinely is not there must still resolve to not-found once
+// the retry is exhausted, rather than erroring or looping.
+func TestLookupReportsNotFoundAfterRetryExhausted(t *testing.T) {
+	ensureClearCache(t)
+
+	fixedNow := time.Date(2026, 2, 14, 0, 0, 0, 0, time.UTC)
+	mockTime(t, fixedNow)
+
+	originalDelay := lookupRetryDelay
+	lookupRetryDelay = 0
+	t.Cleanup(func() { lookupRetryDelay = originalDelay })
+
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	originalDial := backendDial
+	backendDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	defer func() { backendDial = originalDial }()
+
+	resp, err := lookupContainerByIP(context.Background(), "10.0.0.22")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != nil {
+		t.Fatalf("want nil response for a container that is not there, got %#v", resp)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("want exactly 2 backend calls, got %d", got)
+	}
 }
