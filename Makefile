@@ -73,6 +73,10 @@ test-scripts: ## Run shell script tests (bats). No display needed.
 	@command -v bats >/dev/null 2>&1 || { echo "bats not found. Install with: sudo apt install bats"; exit 1; }
 	bats scripts/test-gui-debug.sh
 
+test-ui-browser: ## Run UI tests in a real browser (Chromium)
+	@echo "$(INFO_COLOR)Running UI browser tests...$(NO_COLOR)"
+	cd ui && pnpm test --project=browser
+
 test-ui: ## Run UI tests with Vitest
 	@echo "$(INFO_COLOR)Running UI tests...$(NO_COLOR)"
 	cd ui && pnpm test
@@ -91,6 +95,9 @@ test-proxy-coverage: ## Run proxy tests with coverage
 	cd proxy && go test ./... -coverprofile=coverage.out
 	cd proxy && go tool cover -func=coverage.out | awk '/^total:/{if ($$3+0 < $(COVERAGE_MIN)) {print "Proxy coverage below $(COVERAGE_MIN)%"; exit 1}}'
 
+# Runs both vitest projects (unit and browser), so the browser suite is covered by
+# `make test` through this target. Do not scope it to --project=unit for speed;
+# that silently drops the browser suite from CI and coverage.
 test-ui-coverage: ## Run UI tests with coverage
 	@echo "$(INFO_COLOR)Running UI coverage...$(NO_COLOR)"
 	cd ui && pnpm test --coverage
@@ -221,7 +228,7 @@ setup: ## Install pre-commit hooks
 .PHONY: build build-backend build-proxy build-ui \
         build-extension install-extension update-extension uninstall-extension prepare-buildx push-extension \
         run-test-server run-test-server-port \
-        test test-backend test-proxy test-ui \
+        test test-backend test-proxy test-ui test-ui-browser \
         test-coverage test-backend-coverage test-proxy-coverage test-ui-coverage \
         test-race test-backend-race test-proxy-race \
         test-stress test-backend-stress test-proxy-stress \

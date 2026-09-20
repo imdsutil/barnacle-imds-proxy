@@ -21,7 +21,7 @@
 #
 # This is a debugging aid, not a test harness. Nothing depends on it for a
 # pass/fail signal, so it fails loudly rather than skipping when the environment
-# is not set up. See docs/design/2026-09-19-ui-test-harness.md.
+# is not set up. See docs/design/ui-test-harness.md.
 
 if [[ -z "${GUI_DEBUG_LIB:-}" ]]; then
   set -euo pipefail

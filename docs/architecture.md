@@ -26,13 +26,13 @@ The controller uses the Docker socket to watch for container lifecycle events. W
 2. Connects it to the IMDS bridge networks
 3. Unpauses it
 
-Pausing before connecting ensures the IMDS addresses are routable by the time the container's process starts. Without this, a process that tries to hit the IMDS endpoint at startup could get a connection refused before the network is ready.
+Pausing before connecting ensures the IMDS addresses are routable by the time the container's process starts. Without that order, a process that queries the IMDS endpoint at startup could get a connection refused before the network is ready.
 
-The controller also handles container stop/destroy events to clean up its internal tracking.
+The controller also handles container stop and destroy events, and removes the container from its internal tracking.
 
 ## Proxy
 
-The proxy binds to the IMDS link-local addresses inside the VM and listens for HTTP traffic on each. When a request comes in, it:
+The proxy binds to the IMDS link-local addresses inside the VM and listens for HTTP traffic on each. When a request arrives, it:
 
 1. Looks up which container the request came from by source IP
 2. Forwards the request to the configured IMDS server URL
@@ -42,11 +42,11 @@ The proxy binds to the IMDS link-local addresses inside the VM and listens for H
    - One header per container label (`X-Label-<key>: <value>`)
 4. Streams the response back to the container
 
-If the configured URL uses `localhost`, the proxy rewrites it to `host.docker.internal` before forwarding. This is necessary because inside the VM, `localhost` refers to the VM itself, not the host machine.
+If the configured URL uses `localhost`, the proxy rewrites it to `host.docker.internal` before forwarding. This rewrite is necessary because inside the VM, `localhost` refers to the VM itself, not the host machine.
 
 ## Networks
 
-Bridge networks are derived from the IP addresses configured in Settings. The controller creates one bridge network per /24 (IPv4) or /64 (IPv6) subnet. Networks are named after their subnet — e.g. `.imds-169.254.169.0` for the `169.254.169.254` address. Each network has the proxy attached at the configured IP, so any container connected to that network reaches the proxy when it hits the IMDS address. Because names are derived from subnet content, adding or removing an IP never renames an existing network, which avoids brief connectivity interruptions for containers on unrelated subnets.
+Bridge networks are derived from the IP addresses configured in Settings. The controller creates one bridge network per /24 (IPv4) or /64 (IPv6) subnet. Networks are named after their subnet (for example, `.imds-169.254.169.0` for the `169.254.169.254` address). Each network has the proxy attached at the configured IP, so any container connected to that network reaches the proxy when it sends a request to the IMDS address. Because names are derived from subnet content, adding or removing an IP never renames an existing network. This avoids brief connectivity interruptions for containers on unrelated subnets.
 
 The controller reconciles networks on backend startup and after every Settings save:
 
@@ -54,7 +54,7 @@ The controller reconciles networks on backend startup and after every Settings s
 - Networks no longer needed are removed
 - Labeled containers are reconnected to the current set of networks
 
-If the user configures an unusual address (e.g. `100.100.100.200` for Alibaba Cloud), a corresponding bridge network is created for its subnet — no code change needed.
+If the user configures an unusual address (e.g. `100.100.100.200` for Alibaba Cloud), a corresponding bridge network is created for its subnet, with no code change needed.
 
 ## Settings
 
