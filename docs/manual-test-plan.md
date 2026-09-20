@@ -259,9 +259,9 @@ close button with focus returning to the trigger. 8.5 is exercised by every
 test that opens the dialog rather than having one of its own.
 
 **8.3 is NOT covered and is a known bug.** The test for it is skipped against
-issue #76: the settings poll only reloads when the form has no unsaved edits,
+issue #77: the settings poll only reloads when the form has no unsaved edits,
 so an edit made during an outage never reverts. Check 8.3 by hand until that
-is fixed. Note the expected behaviour itself is under discussion on #76, since
+is fixed. Note the expected behaviour itself is under discussion on #77, since
 silently reverting a user's typing is arguably the wrong remedy.
 
 | # | Action | Expected |
@@ -319,14 +319,14 @@ docker exec imds-proxy-controller curl -sf --unix-socket /run/guest-services/bac
 9.15 (the external update landing in the field) has no automated coverage.
 9.16 has a disabled test: `settings.browser.test.tsx` has
 `test.skip("a settings poll does not overwrite text being typed", ...)`,
-reproducing issue #64, where a poll response that resolves while the user has
+reproducing issue #77, where a poll response that resolves while the user has
 since started typing overwrites their keystrokes. It stays here, marked as
 disabled pending that fix, rather than being deleted or run as-is.
 
 | # | Action | Expected |
 |---|--------|----------|
 | 9.15 | Run the command while on the Settings tab | URL field updates to `http://localhost:9999` within ~5 seconds with no skeleton flicker |
-| 9.16 | Edit the URL field (leave unsaved), run the external update | External change does NOT overwrite the unsaved edit. **Automation disabled**: covered by a `test.skip` in `settings.browser.test.tsx` pending issue #64. |
+| 9.16 | Edit the URL field (leave unsaved), run the external update | External change does NOT overwrite the unsaved edit. **Automation disabled**: covered by a `test.skip` in `settings.browser.test.tsx` pending issue #77. |
 
 ---
 

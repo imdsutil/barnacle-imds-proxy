@@ -62,7 +62,7 @@ test("an invalid URL is rejected rather than saved", async () => {
   expect(fake.savedSettings).toHaveLength(0);
 });
 
-// Issue #64: SettingsForm.tsx:115-121 checks whether the form is dirty
+// Issue #77: SettingsForm.tsx:115-121 checks whether the form is dirty
 // BEFORE calling getSettings(), but loadSettings() (line 77) never re-checks
 // dirtiness after the await, so a poll response that resolves while the
 // form is clean, but after the user has since started typing, unconditionally

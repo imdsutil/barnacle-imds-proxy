@@ -83,9 +83,9 @@ test(
 // real seconds (longer than the poll's 5000ms interval), the field still
 // held the edited value, not the saved one. Not a test bug: this is the
 // same poll interval SettingsForm already runs regardless of
-// proxyUnreachable. Tracked as issue #76, which is the same dirty-check
-// block as #64 and a different failure of it. Remove .skip in the PR that
-// fixes #76.
+// proxyUnreachable. Tracked as issue #77, which combines this with the
+// opposite failure of the same dirty-check block. Remove .skip in the PR
+// that fixes #77.
 test.skip(
   "editing the URL field while the backend is unreachable reverts to the saved value",
   async () => {
