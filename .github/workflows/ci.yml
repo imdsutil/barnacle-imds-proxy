@@ -207,3 +207,20 @@ jobs:
 
       - name: Lint commit messages
         uses: wagoid/commitlint-github-action@v6
+
+      # Squash merging discards the commit messages checked above and uses the
+      # pull request title as the subject of the commit that lands on main.
+      # Nothing was checking that title, which is how two non-conventional
+      # commits reached main with CI green.
+      #
+      # The title is passed through the environment, not interpolated into the
+      # run block. A ${{ }} expansion is substituted into the script before the
+      # shell parses it, so a title containing shell syntax would be executed.
+      - name: Lint the pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$PR_TITLE" | npx --yes \
+            --package @commitlint/cli \
+            --package @commitlint/config-conventional \
+            -- commitlint --config commitlint.config.js
