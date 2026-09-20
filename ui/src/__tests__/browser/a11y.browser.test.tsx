@@ -200,6 +200,92 @@ test("tabbing moves forward out of a row and shift-tab moves back", async () => 
   expect(document.activeElement).toBe(start);
 });
 
+// Section 6 (sorting), keyboard checks. Same fixture shape as the
+// click-driven sort tests in containers.browser.test.tsx: name order and id
+// order disagree, so a keyboard-driven sort by the wrong field would produce
+// a visibly wrong row order rather than passing by coincidence.
+const sortableRows = () =>
+  createFakeDdClient({
+    containers: {
+      containers: [
+        {
+          name: "zeta",
+          containerId: "aaaaaaaaaaaa",
+          labels: { "imds-proxy.enabled": "true" },
+          addresses: [{ ip: "169.254.169.254", connected: true }],
+        },
+        {
+          name: "alpha",
+          containerId: "zzzzzzzzzzzz",
+          labels: { "imds-proxy.enabled": "true" },
+          addresses: [{ ip: "169.254.169.254", connected: true }],
+        },
+      ],
+    },
+  });
+
+function firstRowName(screen: Screen) {
+  return screen.container.querySelector("tbody tr[aria-expanded] td")?.textContent;
+}
+
+// 6.5 and 6.6: Tab reaches the Name column header, and it takes visible
+// focus; pressing Enter on it sorts and updates the active sort arrow. Name
+// is already the default active/ascending column (see
+// containers.browser.test.tsx), so this presses Enter twice: the first
+// press toggles the already-active column to descending (proving Enter
+// drives the same handler a click would), the second brings it back to
+// ascending, both checked against real row order and the icon's direction
+// class rather than just "some sort happened".
+test(
+  "tabbing to the Name header and pressing Enter sorts, with visible focus and an updated arrow",
+  async () => {
+    const screen = await renderApp(sortableRows());
+    await expect.element(screen.getByText("alpha")).toBeVisible();
+
+    const nameHeader = screen.getByRole("button", { name: "Name", exact: true }).query() as HTMLElement;
+    await tabUntilFocused(nameHeader, 12);
+    expect(document.activeElement).toBe(nameHeader);
+
+    await userEvent.keyboard("{Enter}");
+    expect(firstRowName(screen)).toBe("zeta");
+    expect(nameHeader.classList.contains("Mui-active")).toBe(true);
+    expect(
+      nameHeader.querySelector(".MuiTableSortLabel-icon")?.classList.contains("MuiTableSortLabel-iconDirectionDesc")
+    ).toBe(true);
+
+    await userEvent.keyboard("{Enter}");
+    expect(firstRowName(screen)).toBe("alpha");
+    expect(
+      nameHeader.querySelector(".MuiTableSortLabel-icon")?.classList.contains("MuiTableSortLabel-iconDirectionAsc")
+    ).toBe(true);
+  },
+  10000
+);
+
+// 6.7: Tab to the Container ID header and press Enter sorts by id. Reached
+// with real Tab presses past the Name header (confirmed reachable above),
+// not with .focus().
+test(
+  "tabbing to the Container ID header and pressing Enter sorts by id",
+  async () => {
+    const screen = await renderApp(sortableRows());
+    await expect.element(screen.getByText("alpha")).toBeVisible();
+
+    const idHeader = screen.getByRole("button", { name: "Container ID", exact: true }).query() as HTMLElement;
+    await tabUntilFocused(idHeader, 12);
+    expect(document.activeElement).toBe(idHeader);
+
+    await userEvent.keyboard("{Enter}");
+    // ids: zeta=aaaa..., alpha=zzzz..., so ascending by id puts zeta first.
+    expect(firstRowName(screen)).toBe("zeta");
+    expect(idHeader.classList.contains("Mui-active")).toBe(true);
+    expect(
+      idHeader.querySelector(".MuiTableSortLabel-icon")?.classList.contains("MuiTableSortLabel-iconDirectionAsc")
+    ).toBe(true);
+  },
+  10000
+);
+
 // 2.3: tab through the empty containers state. Focus should not get
 // trapped, and the label code element and the documentation link should
 // stay reachable. A trap would mean repeated Tab presses keep landing on
@@ -297,6 +383,106 @@ test(
     await expect.element(screen.getByText(/enter a valid url/i)).toBeVisible();
   },
   8000
+);
+
+// Section 8 (backend unreachable), keyboard checks. failAlways keeps every
+// /containers GET failing so the app reaches and holds UNREACHABLE_THRESHOLD
+// (2) consecutive failures, unlike failNext which only fails once.
+async function reachUnreachableAndOpenSettings(): Promise<Screen> {
+  const fake = createFakeDdClient();
+  fake.failAlways("/containers", 500);
+  const screen = await renderApp(fake);
+  await expect
+    .element(screen.getByText("Extension backend not responding - list may be outdated."), {
+      timeout: 5000,
+    })
+    .toBeVisible();
+  await openSettingsByKeyboard(screen);
+  return screen;
+}
+
+// 8.4 and 8.5: Tab reaches the Settings tab's "Get help" button, it takes
+// visible focus, and Enter on it opens the help dialog.
+test(
+  "tabbing to the Get help button gives it focus, and Enter opens the help dialog",
+  async () => {
+    const screen = await reachUnreachableAndOpenSettings();
+    const helpButton = screen.getByRole("button", { name: "Get help" }).query() as HTMLElement;
+    await tabUntilFocused(helpButton, 10);
+    expect(document.activeElement).toBe(helpButton);
+
+    await userEvent.keyboard("{Enter}");
+    await expect
+      .element(screen.getByText("Extension backend not responding", { exact: true }))
+      .toBeVisible();
+  },
+  10000
+);
+
+// 8.7: tabbing through the dialog reaches both of its interactive elements,
+// the troubleshooting link and the Close button, in DOM order.
+test(
+  "tabbing through the help dialog reaches its link and Close button",
+  async () => {
+    const screen = await reachUnreachableAndOpenSettings();
+    const helpButton = screen.getByRole("button", { name: "Get help" }).query() as HTMLElement;
+    await tabUntilFocused(helpButton, 10);
+    await userEvent.keyboard("{Enter}");
+    await expect
+      .element(screen.getByText("Extension backend not responding", { exact: true }))
+      .toBeVisible();
+
+    const link = screen.getByRole("link", { name: "view the troubleshooting guide" }).query() as HTMLElement;
+    await tabUntilFocused(link, 10);
+    expect(document.activeElement).toBe(link);
+
+    const closeButton = screen.getByRole("button", { name: "Close" }).query() as HTMLElement;
+    await tabUntilFocused(closeButton, 5);
+    expect(document.activeElement).toBe(closeButton);
+  },
+  10000
+);
+
+// 8.9 (Escape variant): Escape closes the dialog and returns focus to the
+// button that opened it.
+test(
+  "pressing Escape closes the help dialog and returns focus to the Get help button",
+  async () => {
+    const screen = await reachUnreachableAndOpenSettings();
+    const helpButton = screen.getByRole("button", { name: "Get help" }).query() as HTMLElement;
+    await tabUntilFocused(helpButton, 10);
+    await userEvent.keyboard("{Enter}");
+    const title = screen.getByText("Extension backend not responding", { exact: true });
+    await expect.element(title).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+    await expect.element(title).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(helpButton);
+  },
+  10000
+);
+
+// 8.9 (Close button variant): tabbing to Close and pressing Enter closes the
+// dialog the same way Escape does, and also returns focus to the trigger.
+test(
+  "tabbing to Close and pressing Enter closes the help dialog and returns focus to the Get help button",
+  async () => {
+    const screen = await reachUnreachableAndOpenSettings();
+    const helpButton = screen.getByRole("button", { name: "Get help" }).query() as HTMLElement;
+    await tabUntilFocused(helpButton, 10);
+    await userEvent.keyboard("{Enter}");
+    const title = screen.getByText("Extension backend not responding", { exact: true });
+    await expect.element(title).toBeVisible();
+
+    const closeButton = screen.getByRole("button", { name: "Close" }).query() as HTMLElement;
+    await tabUntilFocused(closeButton, 10);
+    expect(document.activeElement).toBe(closeButton);
+    await userEvent.keyboard("{Enter}");
+
+    await expect.element(title).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(helpButton);
+  },
+  10000
 );
 
 async function auditFor(node: HTMLElement) {

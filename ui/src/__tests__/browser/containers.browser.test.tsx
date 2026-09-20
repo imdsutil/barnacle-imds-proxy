@@ -15,6 +15,7 @@
 /// <reference types="@vitest/browser/matchers" />
 
 import { expect, test } from "vitest";
+import { userEvent } from "vitest/browser";
 import { createFakeDdClient } from "./fakeDdClient";
 import { renderApp } from "./renderApp";
 
@@ -109,4 +110,107 @@ test("a loading skeleton appears while containers are first loading, then resolv
 
   await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
   expect(screen.container.querySelector(".MuiSkeleton-root")).toBeNull();
+});
+
+// Section 6 (sorting). Three containers whose name order and id order
+// disagree, so a test that accidentally sorted by the wrong field would
+// produce a visibly different (and wrong) row order rather than passing by
+// coincidence.
+const sortableFixture = () =>
+  createFakeDdClient({
+    containers: {
+      containers: [
+        container("zeta", "aaaaaaaaaaaa"),
+        container("alpha", "zzzzzzzzzzzz"),
+        container("mid", "mmmmmmmmmmmm"),
+      ],
+    },
+  });
+
+// Reads just the Name cell's text (the first <td>), not the whole row, since
+// the row also contains the id and IP address and a whole-row textContent
+// comparison would conflate all three.
+function rowNames(screen: Awaited<ReturnType<typeof renderApp>>) {
+  return Array.from(screen.container.querySelectorAll("tbody tr[aria-expanded]")).map(
+    (row) => row.querySelector("td")?.textContent
+  );
+}
+
+function isActiveAscending(headerButton: HTMLElement) {
+  const icon = headerButton.querySelector(".MuiTableSortLabel-icon");
+  return (
+    headerButton.classList.contains("Mui-active") &&
+    (icon?.classList.contains("MuiTableSortLabel-iconDirectionAsc") ?? false)
+  );
+}
+
+function isActiveDescending(headerButton: HTMLElement) {
+  const icon = headerButton.querySelector(".MuiTableSortLabel-icon");
+  return (
+    headerButton.classList.contains("Mui-active") &&
+    (icon?.classList.contains("MuiTableSortLabel-iconDirectionDesc") ?? false)
+  );
+}
+
+// 6.1: ContainersTable defaults to sortBy 'name' / sortOrder 'asc' before any
+// header is ever clicked (see the "containers sort by name" test above), so
+// clicking the already-active Name header first would immediately toggle it
+// to descending rather than demonstrating a fresh ascending sort. Clicking
+// Container ID first moves the active column away from Name, the same way a
+// tester who had just tried section 6.3 would have, so the Name click this
+// test cares about lands on a real column switch (active column: id -> name)
+// rather than a same-column toggle.
+test("clicking the Name header sorts ascending and shows the active sort arrow", async () => {
+  const screen = await renderApp(sortableFixture());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Container ID", exact: true }));
+  const nameHeader = screen.getByRole("button", { name: "Name", exact: true });
+  await userEvent.click(nameHeader);
+
+  expect(rowNames(screen)).toEqual(["alpha", "mid", "zeta"]);
+  expect(isActiveAscending(nameHeader.element() as HTMLElement)).toBe(true);
+});
+
+// 6.2: clicking the already-active Name header a second time reverses it.
+test("clicking the Name header again sorts descending", async () => {
+  const screen = await renderApp(sortableFixture());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const nameHeader = screen.getByRole("button", { name: "Name", exact: true });
+  await userEvent.click(screen.getByRole("button", { name: "Container ID", exact: true }));
+  await userEvent.click(nameHeader);
+  await userEvent.click(nameHeader);
+
+  expect(rowNames(screen)).toEqual(["zeta", "mid", "alpha"]);
+  expect(isActiveDescending(nameHeader.element() as HTMLElement)).toBe(true);
+});
+
+// 6.3: Name is the default active column, so clicking Container ID for the
+// first time is already a switch to a new column and sorts ascending by id
+// without any extra setup.
+test("clicking the Container ID header sorts ascending by id", async () => {
+  const screen = await renderApp(sortableFixture());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const idHeader = screen.getByRole("button", { name: "Container ID", exact: true });
+  await userEvent.click(idHeader);
+
+  // ids: zeta=aaaa..., mid=mmmm..., alpha=zzzz...
+  expect(rowNames(screen)).toEqual(["zeta", "mid", "alpha"]);
+  expect(isActiveAscending(idHeader.element() as HTMLElement)).toBe(true);
+});
+
+// 6.4: clicking the already-active Container ID header a second time
+// reverses it.
+test("clicking the Container ID header again sorts descending", async () => {
+  const screen = await renderApp(sortableFixture());
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+
+  const idHeader = screen.getByRole("button", { name: "Container ID", exact: true });
+  await userEvent.click(idHeader);
+  await userEvent.click(idHeader);
+
+  expect(rowNames(screen)).toEqual(["alpha", "mid", "zeta"]);
+  expect(isActiveDescending(idHeader.element() as HTMLElement)).toBe(true);
 });

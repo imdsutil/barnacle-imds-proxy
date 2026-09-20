@@ -17,6 +17,7 @@ export interface FakeState {
   containers: unknown;
   proxyStatus: string;
   failGet: Record<string, number | undefined>;
+  persistentFailGet: Record<string, number | undefined>;
 }
 
 export interface FakeDdClient {
@@ -29,6 +30,8 @@ export interface FakeDdClient {
   setSettings(value: unknown): void;
   setProxyStatus(value: string): void;
   failNext(path: string, status: number): void;
+  failAlways(path: string, status: number): void;
+  clearFailAlways(path: string): void;
   savedSettings: unknown[];
   openedUrls: string[];
   execCalls: string[];
@@ -40,12 +43,17 @@ export function createFakeDdClient(initial: Partial<FakeState> = {}): FakeDdClie
     containers: initial.containers ?? { containers: [], proxyStatus: "running" },
     proxyStatus: initial.proxyStatus ?? "running",
     failGet: { ...(initial.failGet ?? {}) },
+    persistentFailGet: { ...(initial.persistentFailGet ?? {}) },
   };
   const savedSettings: unknown[] = [];
   const openedUrls: string[] = [];
   const execCalls: string[] = [];
 
   const maybeFail = (path: string) => {
+    const persistentStatus = state.persistentFailGet[path];
+    if (persistentStatus !== undefined) {
+      throw new Error(`fake: ${path} failing persistently with ${persistentStatus}`);
+    }
     const status = state.failGet[path];
     if (status !== undefined) {
       delete state.failGet[path];
@@ -106,6 +114,16 @@ export function createFakeDdClient(initial: Partial<FakeState> = {}): FakeDdClie
     },
     failNext(path: string, status: number) {
       state.failGet[path] = status;
+    },
+    // Fails every GET to `path` until clearFailAlways is called, unlike
+    // failNext which is one-shot. Section 8's "backend unreachable" checks
+    // need a failure that persists across several poll ticks so the app can
+    // reach and then hold UNREACHABLE_THRESHOLD, not just fail once.
+    failAlways(path: string, status: number) {
+      state.persistentFailGet[path] = status;
+    },
+    clearFailAlways(path: string) {
+      delete state.persistentFailGet[path];
     },
     savedSettings,
     openedUrls,
