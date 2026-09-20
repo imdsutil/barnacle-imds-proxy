@@ -46,6 +46,19 @@ async function tabUntilFocused(target: HTMLElement, maxTabs: number) {
   }
 }
 
+type Screen = Awaited<ReturnType<typeof renderApp>>;
+
+// Reaches and activates the Settings tab the same way a keyboard-only user
+// would: real Tab to the tablist (Containers is the only real Tab stop),
+// ArrowRight to move the roving-tabindex focus to Settings, then Enter to
+// activate it.
+async function openSettingsByKeyboard(screen: Screen) {
+  const containersTab = screen.getByRole("tab", { name: /containers/i }).query() as HTMLElement;
+  await tabUntilFocused(containersTab, 5);
+  await userEvent.keyboard("{ArrowRight}");
+  await userEvent.keyboard("{Enter}");
+}
+
 // 1.5, 1.6: the header is reachable and the docs link takes visible focus.
 // Confirmed by walking real Tab presses from a fresh render (throwaway
 // debug walk, since removed): the documentation link is the very first Tab
@@ -172,55 +185,104 @@ test("tabbing moves forward out of a row and shift-tab moves back", async () => 
   expect(document.activeElement).toBe(start);
 });
 
-// 9.10: the Settings tab activates from the keyboard.
-test("the settings tab activates by keyboard", async () => {
-  const screen = await renderApp(createFakeDdClient());
-  const tab = screen.getByRole("tab", { name: /settings/i });
-  await tab.query()?.focus();
-  await userEvent.keyboard("{Enter}");
-  await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
-});
+// 2.3: tab through the empty containers state. Focus should not get
+// trapped, and the label code element and the documentation link should
+// stay reachable. A trap would mean repeated Tab presses keep landing on
+// the same one element instead of moving on, so this checks that Tab
+// visits more than one distinct element as well as checking the two
+// specific targets, rather than just checking the targets in isolation
+// (which a trap elsewhere on the page would not catch).
+test(
+  "tabbing through the empty containers state does not trap focus",
+  async () => {
+    const screen = await renderApp(createFakeDdClient());
+    await expect.element(screen.getByText(/no labeled containers/i)).toBeVisible();
 
-// 9.11, 9.12, 9.13: edit and save with the keyboard alone.
-test("settings can be edited and saved without a mouse", async () => {
-  const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
-  const screen = await renderApp(fake);
+    const visited = new Set<Element | null>();
+    for (let i = 0; i < 6; i++) {
+      await userEvent.tab();
+      visited.add(document.activeElement);
+    }
 
-  const tab = screen.getByRole("tab", { name: /settings/i });
-  await tab.query()?.focus();
-  await userEvent.keyboard("{Enter}");
+    expect(visited.size).toBeGreaterThan(1);
 
-  const field = screen.getByLabelText(/imds server url/i);
-  await field.query()?.focus();
-  await userEvent.keyboard("http://localhost:9000");
+    const link = screen.getByRole("link", { name: /documentation/i }).query();
+    const labelCode = screen.getByText("imds-proxy.enabled=true").query();
+    expect(visited.has(link)).toBe(true);
+    expect(visited.has(labelCode)).toBe(true);
+  },
+  8000
+);
 
-  const save = screen.getByRole("button", { name: /save/i });
-  await save.query()?.focus();
-  await userEvent.keyboard("{Enter}");
+// 9.10: the Settings tab activates from the keyboard ("Tab to Settings tab,
+// press Enter"). openSettingsByKeyboard does the Tab/ArrowRight/Enter
+// sequence; the assertion here is on the ArrowRight step landing on the
+// real tab element, not just on .focus() succeeding.
+test(
+  "the settings tab activates by keyboard",
+  async () => {
+    const screen = await renderApp(createFakeDdClient());
+    const containersTab = screen.getByRole("tab", { name: /containers/i }).query() as HTMLElement;
+    await tabUntilFocused(containersTab, 5);
+    const settingsTab = screen.getByRole("tab", { name: /settings/i }).query() as HTMLElement;
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(settingsTab);
+    await userEvent.keyboard("{Enter}");
+    await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
+  },
+  8000
+);
 
-  await expect.poll(() => fake.savedSettings.length).toBe(1);
-});
+// 9.11, 9.12, 9.13: edit and save with the keyboard alone. Reached with
+// real Tab presses throughout: to the URL field (the first Tab stop once
+// Settings is open), and, after typing, to the Save button (which is
+// disabled and so out of the Tab order until the field's value differs
+// from what was last saved, confirmed by a throwaway debug walk before
+// writing this test, since removed).
+test(
+  "settings can be edited and saved without a mouse",
+  async () => {
+    const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
+    const screen = await renderApp(fake);
+    await openSettingsByKeyboard(screen);
+
+    const fieldEl = screen.getByLabelText(/imds server url/i).query() as HTMLElement;
+    await tabUntilFocused(fieldEl, 5);
+    expect(document.activeElement).toBe(fieldEl);
+    await userEvent.keyboard("http://localhost:9000");
+
+    const saveEl = screen.getByRole("button", { name: /save/i }).query() as HTMLElement;
+    await tabUntilFocused(saveEl, 6);
+    expect(document.activeElement).toBe(saveEl);
+    await userEvent.keyboard("{Enter}");
+
+    await expect.poll(() => fake.savedSettings.length).toBe(1);
+  },
+  8000
+);
 
 // 9.14: an invalid keyboard submit reports the error and keeps focus near the field.
-test("an invalid keyboard submit reports an error", async () => {
-  const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
-  const screen = await renderApp(fake);
+test(
+  "an invalid keyboard submit reports an error",
+  async () => {
+    const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
+    const screen = await renderApp(fake);
+    await openSettingsByKeyboard(screen);
 
-  const tab = screen.getByRole("tab", { name: /settings/i });
-  await tab.query()?.focus();
-  await userEvent.keyboard("{Enter}");
+    const fieldEl = screen.getByLabelText(/imds server url/i).query() as HTMLElement;
+    await tabUntilFocused(fieldEl, 5);
+    await userEvent.keyboard("not a url");
 
-  const field = screen.getByLabelText(/imds server url/i);
-  await field.query()?.focus();
-  await userEvent.keyboard("not a url");
+    const saveEl = screen.getByRole("button", { name: /save/i }).query() as HTMLElement;
+    await tabUntilFocused(saveEl, 6);
+    expect(document.activeElement).toBe(saveEl);
+    await userEvent.keyboard("{Enter}");
 
-  const save = screen.getByRole("button", { name: /save/i });
-  await save.query()?.focus();
-  await userEvent.keyboard("{Enter}");
-
-  expect(fake.savedSettings).toHaveLength(0);
-  await expect.element(screen.getByText(/enter a valid url/i)).toBeVisible();
-});
+    expect(fake.savedSettings).toHaveLength(0);
+    await expect.element(screen.getByText(/enter a valid url/i)).toBeVisible();
+  },
+  8000
+);
 
 async function auditFor(node: HTMLElement) {
   const results = await axe.run(node, {
