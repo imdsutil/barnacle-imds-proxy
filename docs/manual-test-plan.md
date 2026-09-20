@@ -31,7 +31,6 @@ configured IP in Settings.
 | Click the ID copy icon with the mouse | Snackbar "Copied container ID to clipboard", clipboard has the full ID | Only the name-copy icon is covered by a real click test; ID copy isn't |
 | Click a row to expand it, click again to collapse, then click the expand arrow directly | Row toggles each time, without triggering name/ID copy | Only keyboard-driven expand/collapse is covered; real mouse clicks aren't |
 | Copy a container name or ID and paste it somewhere | The real system clipboard has the value | `navigator.clipboard.writeText` always rejects in headless Chromium under Playwright (NotAllowedError), so the suite stubs `writeText` and never performs a real write |
-| Run an accessibility audit (e.g. axe DevTools) against the Containers tab | No violations other than the known `aria-expanded` on a `<tr>` element | The automated WCAG audit is `test.skip`, pending issue #70 |
 
 ### Settings tab
 
@@ -42,13 +41,20 @@ configured IP in Settings.
 | While on the Settings tab, run the external settings-update command from the Prerequisites | URL field updates to the new value within ~5 seconds, no skeleton flicker | Not exercised by the suite |
 | Edit the URL field without saving, then run the external settings-update command | The unsaved edit is NOT overwritten | Disabled: `test.skip("a settings poll does not overwrite text being typed", ...)` in `settings.browser.test.tsx`, pending issue #77 |
 | Stop the controller (`docker stop imds-proxy-controller`) to reach the backend-unreachable state, then edit the URL field | Field reverts to the previously saved value after a few seconds (current behavior; itself under discussion) | Disabled: `test.skip` in `proxyState.browser.test.tsx`, pending issue #77 |
-| Run an accessibility audit (e.g. axe DevTools) against the Settings tab | No violations other than the known missing accessible name on the "add IP address" button | The automated WCAG audit is `test.skip`, pending issue #71 |
 
 ### Header
 
 | Action | Expected | Why it's manual |
 |--------|----------|------------------|
 | Click "View documentation" | GitHub repo opens in the system browser, not inside Docker Desktop | The suite can assert `host.openExternal` is called with the right URL, but not that Docker Desktop actually hands off to the system browser |
+
+**One coverage hole with no manual substitute.** The automated WCAG A and AA
+audits are disabled because of two known violations, #70 (`aria-expanded` on a
+`<tr>`) and #71 (the add IP address button has no accessible name). While they
+are disabled, a newly introduced accessibility violation would not be caught.
+There is no useful manual step here: re-running axe by hand before each release
+only rediscovers the two violations already filed. Fixing #70 and #71 removes
+the `.skip`s and the audits resume covering this automatically.
 
 Proxy traffic (originally section 13) needs no GUI and isn't part of this
 checklist; it's covered by `scripts/test-e2e.sh`.
