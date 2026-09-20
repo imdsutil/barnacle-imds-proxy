@@ -512,6 +512,8 @@ async function auditFor(node: HTMLElement) {
 // own default palette here rather than Docker Desktop's real one. A "no
 // violations" result from this audit is only a claim about MUI's defaults,
 // not the colors a user actually sees.
+//
+// Tracked as issue #70. Remove .skip in the PR that fixes it.
 test.skip("the containers tab has no WCAG A or AA violations", async () => {
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
@@ -530,6 +532,8 @@ test.skip("the containers tab has no WCAG A or AA violations", async () => {
 // own default palette here rather than Docker Desktop's real one. A "no
 // violations" result from this audit is only a claim about MUI's defaults,
 // not the colors a user actually sees.
+//
+// Tracked as issue #71. Remove .skip in the PR that fixes it.
 test.skip("the settings tab has no WCAG A or AA violations", async () => {
   const screen = await renderApp(createFakeDdClient());
   await userEvent.click(screen.getByRole("tab", { name: /settings/i }));
