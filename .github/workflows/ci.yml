@@ -93,6 +93,31 @@ jobs:
       - name: Run script tests
         run: make test-scripts
 
+  # Branch protection requires a context named "test". The work it used to do
+  # is now split across go, ui and scripts, so this aggregates their results
+  # into that one required check. Splitting further only means adding to
+  # `needs` here, with no change to repository settings.
+  #
+  # always() is required: without it a failed dependency makes this job
+  # skipped rather than failed, and a skipped required check does not block a
+  # merge. Each result is then asserted explicitly, so cancelled and skipped
+  # both fail too.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [go, ui, scripts]
+    if: always()
+    steps:
+      - name: Verify the test jobs all passed
+        run: |
+          echo "go=${{ needs.go.result }} ui=${{ needs.ui.result }} scripts=${{ needs.scripts.result }}"
+          for result in "${{ needs.go.result }}" "${{ needs.ui.result }}" "${{ needs.scripts.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "A required test job did not succeed."
+              exit 1
+            fi
+          done
+
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 10
