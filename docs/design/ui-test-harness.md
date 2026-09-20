@@ -1,18 +1,20 @@
 # UI test harness design
 
-Status: approved, not yet implemented
-Date: 2026-09-19
+Status: implemented. Designed 2026-09-19.
+
+The design below is the record of why the harness looks the way it does. For
+how to run the tests, and for which tool covers what, see `DEVELOPMENT.md`.
 
 ## Problem
 
-`docs/manual-test-plan.md` is 351 lines across 13 sections, all executed by hand
-before a release. Nothing about the UI is verified automatically: CI runs
-`make test` and `pnpm build`, so the UI's only automated coverage is vitest
-component tests against jsdom.
+Before this work, `docs/manual-test-plan.md` was a 351-line checklist executed
+by hand before every release, and nothing about the UI was verified
+automatically. CI ran `make test` and `pnpm build`, so the UI's only automated
+coverage was vitest component tests against jsdom.
 
-That gap has already cost us. A review of the UI found several defects that
-ship green today, all of which are reachable only by driving the running app
-with a backend that misbehaves:
+That gap had already cost us. A review of the UI found several defects that
+shipped green, all of them reachable only by driving the running app with a
+backend that misbehaves:
 
 - A malformed `/containers` response bypasses the "backend unreachable" state
   machine and fires a non-dismissable error snackbar on every poll tick.
@@ -25,20 +27,21 @@ real app's polling loop meeting a hostile payload.
 
 ## Goals
 
-- Automate the UI-only sections of the manual test plan so they run on every PR.
+- Automate the UI-only parts of the manual test plan so they run on every PR.
 - Make error states trivially reachable, so the bug class above is covered.
 - Give an agent a precise way to drive and inspect the UI during development.
 
 ## Non-goals
 
 - Replacing the manual test plan entirely. A short human smoke list remains for
-  the real extension (see Coverage).
+  the real extension.
 - Testing the real Docker Desktop integration. See "Out of scope".
 - Testing against the real backend. See "Deferred: real-backend mode".
 
 ## Design
 
 ### What the browser actually needs (verified)
+
 
 Loading the UI in Chrome against `pnpm dev` was tested directly. Findings:
 
@@ -65,7 +68,7 @@ This also reproduced the missing error boundary from the UI review. React logged
 "Consider adding an error boundary" and the user saw an empty page with no
 explanation, which is exactly the predicted failure.
 
-### The shim
+### The fake client
 
 The UI touches exactly four Docker Desktop APIs:
 
@@ -76,78 +79,68 @@ The UI touches exactly four Docker Desktop APIs:
 | `docker.cli.exec(cmd, args)` | `App.tsx` (proxy container start/unpause/compose) |
 | `host.openExternal(url)` | `App.tsx` (docs links) |
 
-The shim implements those four against an in-memory state object. It is
-installed in place of `createDockerDesktopClient()` when running under the
-harness, and nowhere else.
+`createFakeDdClient()` implements those four against an in-memory state object
+and adds the controls a test needs: `setContainers`, `setSettings`,
+`setProxyStatus`, `failNext` (fail one request), `failAlways` and
+`clearFailAlways` (fail every request until cleared, which is what reaching the
+unreachable threshold requires), plus the `savedSettings`, `openedUrls` and
+`execCalls` spies.
 
-### Control plane
+An unrecognised GET throws rather than returning a default, so a test that
+drives the app down an unmodelled path fails loudly instead of silently
+passing against an empty response.
 
-State is driven through `window.__harness`, exposed by the shim:
+### Wiring it in
 
-```js
-window.__harness.setContainers([...])
-window.__harness.setSettings({ url, customIPs })
-window.__harness.failNext('/containers', { status: 500 })
-window.__harness.respondWith('/containers', 'not-an-object')
-window.__harness.setProxyState('paused')
+The original design routed state through a page-world global,
+`window.__harness`, on the assumption that the driver would be an out-of-process
+Playwright script. That turned out to be unnecessary. Vitest browser mode runs
+the test file inside the browser alongside the app, so the fake is passed
+straight to the component tree with no bridge at all:
+
+```ts
+const fake = createFakeDdClient({ proxyStatus: "paused" });
+const screen = await renderApp(fake);
 ```
 
-No server, no Vite middleware, no HTTP control endpoint.
+`renderApp` mocks `createDockerDesktopClient()` to return the fake and wraps
+`App` in `DockerMuiV6ThemeProvider`. `vite.config.ts` aliases
+`@docker/extension-api-client` to a local mock whenever `VITEST` is set, which
+is what makes that mock possible; the alias is absent from a production build.
+The theme global from the section above is seeded in `beforeEach`.
 
-Playwright reaches this directly, because `page.evaluate` runs in the page's own
-world. An agent driving Chrome through the Claude extension does not: that
-JavaScript runs in an isolated world which shares the DOM but not JS globals, so
+Two suites share one config through vitest projects: `unit` (jsdom, the
+pre-existing component tests) and `browser` (real Chromium via
+`@vitest/browser-playwright`). `pnpm test` runs both.
+
+Recorded so it is not retried: a page-world global would not have worked for an
+agent driving Chrome through the Claude extension anyway. That JavaScript runs
+in an isolated world which shares the DOM but not JS globals, so
 `window.__harness` is invisible to it. Verified by probing for a page-world
 global and getting `undefined`.
 
-The harness therefore also needs a DOM-based bridge for that case. Injecting a
-`<script>` element whose text runs in the page world works and was verified;
-results come back through the DOM. Whichever form it takes, it must be a
-documented part of the harness rather than something each caller reinvents,
-since the failure mode is silent: setting a global appears to succeed and simply
-has no effect.
+### Keeping the harness out of production
 
-### Keeping the shim out of production
+A build-output test, not a convention. `noHarnessInBuild.test.ts` runs
+`pnpm build` and greps the emitted bundles for harness markers.
 
-A build-output test, not a convention. After `vite build`, a vitest case greps
-the emitted bundle for the harness symbols and fails if any are present. An
-`import.meta.env.DEV` guard alone can regress silently, and this repo has no
-lint rule that would catch it, so the guarantee is verified on every CI run.
+The markers have to be chosen for what survives esbuild. Identifiers are
+mangled, so grepping for `createFakeDdClient` proves nothing; string literals
+and property accesses survive, so the test looks for the literal
+`fake: unexpected GET` and for `__ddMuiV6Themes = {`. The assignment pattern
+matters: the production theme provider reads that global, so a bare name match
+would fire on shipped code.
+
+The same test asserts the marker is present in the harness source, so the guard
+cannot quietly start passing because the string it looks for was renamed.
 
 ### CI
 
-A new job installs Chromium (`playwright install --with-deps chromium`) and runs
-the suite headless. This is the largest cost in the phase: a net-new dependency
-plus roughly 300MB of browser download, adding a minute or two of wall clock.
-The repo has no browser driver today (jsdom only) and CI installs no browser.
-
-## Coverage
-
-Automated by this harness:
-
-| Section | What it covers |
-|---|---|
-| 1, 2 | Initial load, empty state |
-| 3 | Label copy affordance |
-| 4 | Containers tab with labeled containers, keyboard access |
-| 5 | Network connectivity chips |
-| 6 | Sorting |
-| 7a-d | Proxy container alerts: stopped, paused, crashed, missing |
-| 8 | Backend unreachable |
-| 9 | Settings tab, validation, polling behavior |
-| 11 | Snackbar behavior |
-| 12 | Light/dark mode |
-
-Remains manual, as a short smoke list:
-
-- Section 10, that a documentation link actually opens a browser. The harness can
-  assert `host.openExternal` was called with the right URL; it cannot verify that
-  Docker Desktop honours the call.
-- The extension tab chrome and its placement in Docker Desktop.
-- That the real `@docker/extension-api-client` transport still matches the shim.
-
-Section 13 (proxy traffic, end-to-end) needs no GUI and is better served by
-`scripts/test-e2e.sh` once its stale `.imds-0` network names are fixed.
+No separate job. The existing `test` job gained a cached
+`playwright install chromium --with-deps` step, and `make test` reaches the
+browser suite through `make test-ui-coverage`, which runs both vitest projects.
+Scoping that target to `--project=unit` for speed would drop the browser suite
+from CI without failing anything, so the Makefile carries a comment saying so.
 
 ## Out of scope: driving the real Docker Desktop window
 
@@ -228,19 +221,19 @@ the above, all human-driven:
 - `docker extension dev ui-source <ext> http://localhost:3000` points the real
   extension at a dev server.
 
-That last one matters for this design: the same Vite server can serve both the
-browser harness and the real extension tab, so the smoke list exercises the same
-bundle the automated suite does, rather than a separate build.
+That last one is how the manual smoke list is run against work in progress:
+point the real extension tab at `pnpm dev` and it picks up the same source the
+browser suite compiles, without a rebuild between each change. The browser suite
+itself does not use that server; vitest builds and serves its own page.
 
 Worth knowing for expectations: Docker documents no automated or end-to-end
 testing story for extension UIs at all, and published extensions test with
 Vitest and React Testing Library against jsdom, which is what this repo already
 does. A browser-driven suite puts this repo ahead of common practice for Docker
 extensions rather than catching it up.
-
 ## Deferred: real-backend mode
 
-Pointing the shim at the real controller is blocked on infrastructure, not
+Pointing the fake at the real controller is blocked on infrastructure, not
 effort. The controller runs inside the Docker Desktop VM with
 `network_mode: none`, serving a Unix socket at
 `/run/guest-services/backend.sock`; a browser on the host cannot reach it.
@@ -249,23 +242,22 @@ a TCP listener added to production code. The second means changing how the
 shipped artifact runs in order to test it, which deserves its own decision
 rather than being folded into this work.
 
-Revisit once the browser suite exists and the remaining gap is measurable.
+Revisit now that the browser suite exists and the remaining gap is measurable.
 
-## Testing
+## Known gaps
 
-The harness is itself test infrastructure, so it is verified by the suite it
-enables plus two specific checks:
-
-- The build-output test described above.
-- A test asserting the shim's method signatures match the subset of
-  `@docker/extension-api-client` the UI uses, so the shim cannot silently drift
-  from the real API and give false confidence.
+The fake's method signatures are hand-written and are handed to the mock as
+`never`, so TypeScript will not catch it drifting from the real
+`@docker/extension-api-client`. A signature-conformance test was part of the
+original design and was not built. Until it is, an upstream API change shows up
+as a green suite and a broken extension.
 
 ## Files
 
-- `ui/src/dev/harness.ts`: shim and `window.__harness`
-- `ui/e2e/*.spec.ts`: Playwright specs, one per test-plan section
-- `ui/e2e/fixtures.ts`: container and settings fixtures
-- `.github/workflows/ci.yml`: new job
-- `DEVELOPMENT.md`: how to run it
-- `docs/manual-test-plan.md`: reduced to the smoke list, pointing here
+- `ui/src/__tests__/browser/fakeDdClient.ts`: the fake client and its controls
+- `ui/src/__tests__/browser/renderApp.tsx`: mounts `App` against a fake
+- `ui/src/__tests__/browser/setup.ts`: theme global, mock reset between tests
+- `ui/src/__tests__/browser/*.browser.test.tsx`: the suites
+- `ui/src/__tests__/__mocks__/extension-api-client.ts`: the aliased module
+- `ui/src/__tests__/noHarnessInBuild.test.ts`: build-output guard
+- `ui/vite.config.ts`: the two vitest projects and the test-only alias

@@ -21,6 +21,41 @@ This builds both the extension image and the proxy image, then installs the exte
 make update-extension
 ```
 
+## Testing approach
+
+Four things test this repo: Go's test runner, vitest, bats, and a human with
+the manual test plan. They split by what each one can reach rather than by
+component. `make test` is the gate: everything in the first table runs there,
+so it also runs on every pull request. Everything in the second needs something
+CI does not have (a real Docker daemon, an installed extension, another
+checkout, eyes) and is run by hand.
+
+Runs in `make test`, and therefore in CI:
+
+| Tool | What it covers | Where |
+|---|---|---|
+| `go test` | Controller and proxy logic: handlers, settings, container tracking, IP cache, header forwarding | `backend/*_test.go`, `proxy/*_test.go` |
+| `go test -race` and stress runs | The tracker's and cache's behaviour under concurrent access | same files, via `make test-race` and `make test-stress` |
+| vitest, `unit` project | React components in isolation against jsdom | `ui/src/__tests__/*.test.tsx` |
+| vitest, `browser` project | The whole app in real Chromium, driven against a fake Docker Desktop client. This is the only thing that reaches polling behaviour, error states and keyboard navigation | `ui/src/__tests__/browser/` |
+| vitest build guard | Builds the UI and greps the emitted bundles, to prove the browser test harness never ships | `ui/src/__tests__/noHarnessInBuild.test.ts` |
+| bats | Argument handling and teardown logic of `gui-debug.sh`, hermetically | `scripts/test-gui-debug.sh` |
+
+Run by hand:
+
+| Tool | What it covers | When |
+|---|---|---|
+| `go test -tags=integration` | The controller against a real Docker daemon | `make test-integration`, or `make regression` for the lot |
+| bats e2e | A live extension install: labeled containers get attached, IMDS addresses answer, identity headers arrive | `make test-e2e`, with the extension installed and pointed at `localhost:8080`. The script runs its own test server |
+| bats, imds-server | Interoperation with the separate imds-server repo | `IMDS_SERVER_REPO=... bats scripts/test-imds-server.sh`. Wired into no Make target |
+| `docs/manual-test-plan.md` | The real extension inside Docker Desktop: tab chrome, external links, anything the fake client cannot vouch for | Before a release, and before merging UI changes |
+| `go test -bench` | Performance of the hot paths | `make bench` |
+
+Two things are deliberately absent from both tables. `scripts/gui-debug.sh` is a
+debugging aid rather than a test: nothing takes a pass/fail signal from it. And
+the browser suite never talks to the real controller, which is a known gap
+explained in `docs/design/ui-test-harness.md`.
+
 ## Running tests
 
 ```bash
