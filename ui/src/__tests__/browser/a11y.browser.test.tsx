@@ -35,24 +35,56 @@ const withRows = () =>
     },
   });
 
-// 1.5, 1.6: the header is reachable and the docs link takes visible focus.
-test("the documentation link is reachable by keyboard", async () => {
-  const screen = await renderApp(createFakeDdClient());
-  const link = screen.getByRole("link", { name: /documentation/i });
-  const el = link.query() as HTMLElement;
-  el.focus();
-  expect(document.activeElement).toBe(el);
-});
-
-// 1.7: both tabs are reachable by keyboard.
-test("both tabs are reachable by keyboard", async () => {
-  const screen = await renderApp(createFakeDdClient());
-  for (const name of [/containers/i, /settings/i]) {
-    const el = screen.getByRole("tab", { name }).query() as HTMLElement;
-    el.focus();
-    expect(document.activeElement).toBe(el);
+// Calling .focus() directly proves an element CAN take focus, not that a
+// keyboard user can Tab to it: it succeeds even on a natively focusable
+// element that someone has removed from the Tab order with tabIndex={-1}.
+// This drives real Tab key presses instead, bounded so a target that is
+// never reached fails clearly rather than hanging.
+async function tabUntilFocused(target: HTMLElement, maxTabs: number) {
+  for (let i = 0; i < maxTabs && document.activeElement !== target; i++) {
+    await userEvent.tab();
   }
-});
+}
+
+// 1.5, 1.6: the header is reachable and the docs link takes visible focus.
+// Confirmed by walking real Tab presses from a fresh render (throwaway
+// debug walk, since removed): the documentation link is the very first Tab
+// stop.
+test(
+  "the documentation link is reachable by keyboard",
+  async () => {
+    const screen = await renderApp(createFakeDdClient());
+    const link = screen.getByRole("link", { name: /documentation/i });
+    const el = link.query() as HTMLElement;
+    await tabUntilFocused(el, 5);
+    await expect.element(link).toHaveFocus();
+  },
+  8000
+);
+
+// 1.7: both tabs are reachable by keyboard. MUI's Tabs component uses a
+// roving tabindex, the WAI-ARIA APG "tabs" pattern: only the selected tab
+// (Containers, initially) is ever a real Tab stop, and the other tab is
+// reached with the arrow keys once the tablist has focus, not with another
+// Tab press. Confirmed with a throwaway debug walk (since removed): Tab
+// alone from a fresh render never lands on the Settings tab while
+// Containers is selected. That is correct, standard tab-widget behaviour,
+// not a bug, so this reaches Settings with Tab then ArrowRight rather than
+// asserting Tab reaches it directly.
+test(
+  "both tabs are reachable by keyboard",
+  async () => {
+    const screen = await renderApp(createFakeDdClient());
+    const containersTab = screen.getByRole("tab", { name: /containers/i }).query() as HTMLElement;
+    await tabUntilFocused(containersTab, 5);
+    expect(document.activeElement).toBe(containersTab);
+
+    const settingsTab = screen.getByRole("tab", { name: /settings/i }).query() as HTMLElement;
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(settingsTab);
+  },
+  8000
+);
 
 // 1.8: Enter and Space on a focused tab switch to it.
 test.each(["{Enter}", " "])("pressing %s on the settings tab switches to it", async (key) => {
@@ -63,15 +95,23 @@ test.each(["{Enter}", " "])("pressing %s on the settings tab switches to it", as
   await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
 });
 
-// 4.9: a row takes visible focus when tabbed to.
-test("a container row is reachable by keyboard and shows focus", async () => {
-  const screen = await renderApp(withRows());
-  await expect.element(screen.getByText("alpha")).toBeVisible();
+// 4.9: a row takes visible focus when tabbed to. Reached with real Tab
+// presses from a fresh render (the documentation link, the Containers tab,
+// the label's copy button, and the two column sort labels all come before
+// it, confirmed by a throwaway debug walk, since removed), not with
+// .focus(), which would succeed even if the row's tabIndex were removed.
+test(
+  "a container row is reachable by keyboard and shows focus",
+  async () => {
+    const screen = await renderApp(withRows());
+    await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
-  row.focus();
-  expect(document.activeElement).toBe(row);
-});
+    const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
+    await tabUntilFocused(row, 12);
+    expect(document.activeElement).toBe(row);
+  },
+  8000
+);
 
 // 4.10 and 4.11: Enter and Space both toggle the row.
 //
@@ -91,18 +131,30 @@ test.each(["{Enter}", " "])("pressing %s on a focused row toggles it", async (ke
 });
 
 // 4.13, 4.14, 4.15: the per-row controls are focusable and Enter-activated.
-test("every interactive control in a row is reachable by keyboard", async () => {
-  const screen = await renderApp(withRows());
-  await expect.element(screen.getByText("alpha")).toBeVisible();
+// Reached to the row with real Tab presses, then one further real Tab per
+// control, asserting focus lands on each in DOM order (copy name, copy id,
+// the connected-address chip, then expand/collapse), rather than jumping to
+// each with .focus(), which cannot detect a control removed from the Tab
+// order.
+test(
+  "every interactive control in a row is reachable by keyboard",
+  async () => {
+    const screen = await renderApp(withRows());
+    await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
-  const controls = row.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
-  expect(controls.length).toBeGreaterThan(0);
-  for (const control of controls) {
-    (control as HTMLElement).focus();
-    expect(document.activeElement).toBe(control);
-  }
-});
+    const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
+    await tabUntilFocused(row, 12);
+    expect(document.activeElement).toBe(row);
+
+    const controls = row.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) {
+      await userEvent.tab();
+      expect(document.activeElement).toBe(control);
+    }
+  },
+  8000
+);
 
 // 4.16 and 4.17: tab order moves between rows without trapping focus.
 test("tabbing moves forward out of a row and shift-tab moves back", async () => {
@@ -186,6 +238,11 @@ async function auditFor(node: HTMLElement) {
 // rows and reading the violation's target selectors, both pointing at the
 // two <tr aria-expanded="..."> rows. Fixing it means changing
 // ContainersTable.tsx, which is out of scope for this task.
+//
+// Whoever fixes this will also need to update the "tbody tr[aria-expanded]"
+// selector used in this file (the 4.9, 4.10/4.11, 4.13-4.15 and 4.16/4.17
+// tests above) and in containers.browser.test.tsx:55, since both rely on
+// aria-expanded staying on the <tr>.
 test.skip("the containers tab has no WCAG A or AA violations", async () => {
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
