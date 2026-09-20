@@ -71,7 +71,7 @@ test-proxy: ## Run proxy tests
 test-scripts: ## Run shell script tests (bats). No display needed.
 	@echo "$(INFO_COLOR)Running script tests...$(NO_COLOR)"
 	@command -v bats >/dev/null 2>&1 || { echo "bats not found. Install with: sudo apt install bats"; exit 1; }
-	bats scripts/test-gui-debug.sh
+	bats scripts/test-gui-debug.sh scripts/test-ci-coverage.sh
 
 test-ui-browser: ## Run UI tests in a real browser (Chromium)
 	@echo "$(INFO_COLOR)Running UI browser tests...$(NO_COLOR)"
