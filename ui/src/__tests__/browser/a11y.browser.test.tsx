@@ -15,7 +15,7 @@
 /// <reference types="@vitest/browser/matchers" />
 
 import { expect, test } from "vitest";
-import { userEvent } from "@vitest/browser/context";
+import { userEvent } from "vitest/browser";
 import axe from "axe-core";
 import { createFakeDdClient } from "./fakeDdClient";
 import { renderApp } from "./renderApp";
