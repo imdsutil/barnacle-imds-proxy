@@ -31,6 +31,13 @@ export interface ContainerInfo {
 }
 
 /**
+ * Container entry as rendered, flagged when the backend sent a bad element
+ */
+export interface DisplayContainer extends ContainerInfo {
+  malformed?: boolean;
+}
+
+/**
  * Settings response from backend
  */
 export interface SettingsResponse {
@@ -55,13 +62,23 @@ export interface ContainersResponse {
  * Type guard to validate settings response
  */
 export const isSettingsResponse = (value: unknown): value is SettingsResponse => {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  if (v.url !== undefined && typeof v.url !== 'string') {
+    return false;
+  }
+  return (
+    v.customIPs === undefined ||
+    (Array.isArray(v.customIPs) && v.customIPs.every((ip) => typeof ip === 'string'))
+  );
 };
 
 /**
  * Type guard to validate a single container entry
  */
-const isContainerInfo = (value: unknown): value is ContainerInfo => {
+export const isContainerInfo = (value: unknown): value is ContainerInfo => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
@@ -83,9 +100,5 @@ export const isContainersResponse = (value: unknown): value is ContainersRespons
     return false;
   }
   const v = value as Record<string, unknown>;
-  return (
-    Array.isArray(v.containers) &&
-    v.containers.every(isContainerInfo) &&
-    typeof v.proxyStatus === 'string'
-  );
+  return Array.isArray(v.containers) && typeof v.proxyStatus === 'string';
 };

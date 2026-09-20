@@ -34,10 +34,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 import {
-  ContainerInfo,
+  DisplayContainer,
   ProxyContainerState,
   isContainersResponse,
 } from './types';
+import { toDisplayContainers } from './utils/containerUtils';
 import { ContainersTable } from './components/ContainersTable';
 import { SettingsForm } from './components/SettingsForm';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -93,7 +94,7 @@ export function App() {
   const [proxyContainerState, setProxyContainerState] = useState<ProxyContainerState | null>(null);
 
   // Container state
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
+  const [containers, setContainers] = useState<DisplayContainer[]>([]);
   const [isLoadingContainers, setIsLoadingContainers] = useState(false);
 
   // Snackbar notification state
@@ -129,7 +130,7 @@ export function App() {
       if (isContainersResponse(result) && isMountedRef.current) {
         hasLoadedOnceRef.current = true;
         consecutiveFailuresRef.current = 0;
-        setContainers(result.containers);
+        setContainers(toDisplayContainers(result.containers));
         setProxyContainerState(result.proxyStatus);
         setProxyUnreachable(false);
       } else if (isMountedRef.current) {

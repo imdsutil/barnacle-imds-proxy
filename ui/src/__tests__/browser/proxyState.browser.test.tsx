@@ -171,10 +171,10 @@ test(
   10000
 );
 
-// Issue #75. A malformed /containers response never increments
-// consecutiveFailuresRef, so the app never enters the same
-// backend-unreachable state a real failed request would after
-// UNREACHABLE_THRESHOLD ticks; it just fires a fresh error snackbar
+// Issue #75. A malformed /containers response used to never increment
+// consecutiveFailuresRef, so the app never entered the same
+// backend-unreachable state a real failed request reaches after
+// UNREACHABLE_THRESHOLD ticks; it just fired a fresh error snackbar
 // (autoHideDuration null) on every poll tick instead. This asserts the
 // unreachable banner, not just "an alert exists".
 test("a malformed containers response drives the app into the unreachable state", async () => {
@@ -187,12 +187,49 @@ test("a malformed containers response drives the app into the unreachable state"
     .toBeVisible();
 });
 
-// Issue #74. Both type guards are shape only and there is no error
-// boundary, so one malformed element blanks the panel (cleanContainerName
-// in containerUtils.ts:25 throws "Cannot read properties of undefined
-// (reading 'startsWith')" and React unmounts the tree).
+// Issue #74. The guards were shape only and there was no error boundary, so
+// one malformed element blanked the panel (cleanContainerName in
+// containerUtils.ts:25 threw "Cannot read properties of undefined (reading
+// 'startsWith')" and React unmounted the tree). Bad elements are now coerced
+// with per-field fallbacks instead.
 test("a malformed container element does not blank the panel", async () => {
   const fake = createFakeDdClient({ containers: { containers: [{}] }, proxyStatus: "running" });
   const screen = await renderApp(fake);
   await expect.element(screen.getByText("Barnacle IMDS Proxy")).toBeVisible();
+});
+
+// Also issue #74: a bad element must not cost the user the good ones. The
+// mixed fixture pins down that both valid containers still render, that the
+// bad row is identifiable by its accessible name rather than by its red tint
+// alone, and that it is not expandable (expandable rows carry aria-expanded,
+// so counting them catches a malformed row that became clickable).
+test("a malformed container element renders as a warning row beside the good ones", async () => {
+  const fake = createFakeDdClient({
+    containers: {
+      containers: [
+        {
+          name: "alpha",
+          containerId: "aaaaaaaaaaaa",
+          labels: { "imds-proxy.enabled": "true" },
+          addresses: [{ ip: "169.254.169.254", connected: true }],
+        },
+        { containerId: 42 },
+        {
+          name: "beta",
+          containerId: "bbbbbbbbbbbb",
+          labels: { "imds-proxy.enabled": "true" },
+          addresses: [{ ip: "169.254.169.254", connected: true }],
+        },
+      ],
+    },
+    proxyStatus: "running",
+  });
+  const screen = await renderApp(fake);
+
+  await expect.element(screen.getByText("alpha")).toBeVisible();
+  await expect.element(screen.getByText("beta")).toBeVisible();
+  await expect
+    .element(screen.getByRole("img", { name: "Invalid data for this container" }))
+    .toBeVisible();
+  expect(screen.container.querySelectorAll("tbody tr[aria-expanded]").length).toBe(2);
 });
