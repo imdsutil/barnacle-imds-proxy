@@ -8,39 +8,66 @@ on:
 
 permissions: {}
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+# Superseded runs are cancelled so three quick pushes to a PR do not occupy
+# three sets of runners. Keyed on ref, so main and each PR are independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+# The go, ui and scripts jobs together run everything `make test` runs. They
+# are split so they execute concurrently and each installs only the toolchain
+# it needs. scripts/ci-covers-make-test.sh fails the build if a target in
+# `make test` stops being covered here.
 jobs:
-  test:
+  go:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25"
+          # There is no go.sum at the repo root, so the cache has to be pointed
+          # at the one module that has external dependencies. Without this,
+          # setup-go finds nothing to key on and caches neither the module
+          # downloads nor the build cache.
+          cache-dependency-path: backend/go.sum
+
+      - name: Run Go tests
+        run: |
+          make test-backend-coverage test-proxy-coverage \
+               test-backend-race test-proxy-race \
+               test-backend-stress test-proxy-stress
+
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # Must come before setup-node, which needs the pnpm binary on PATH to
+      # resolve the store path for its cache. package_json_file is required
+      # because the action reads the pinned packageManager from the repository
+      # root by default, and this repo's package.json lives in ui/.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ui/package.json
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: "10"
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Install UI dependencies
         run: cd ui && pnpm install
 
-      - name: Install bats
-        run: sudo apt-get update && sudo apt-get install -y bats
-
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
@@ -48,26 +75,86 @@ jobs:
       - name: Install Playwright Chromium
         run: cd ui && pnpm exec playwright install chromium --with-deps
 
-      - name: Run tests
-        run: make test
+      # Runs both vitest projects. The production bundle is built and checked
+      # inside this run by noHarnessInBuild.test.ts, so there is no separate
+      # build step: a broken build fails here.
+      - name: Run UI tests
+        run: make test-ui-coverage
 
-      - name: Build UI
-        run: cd ui && pnpm build
+  scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: Run script tests
+        run: make test-scripts
+
+  # Branch protection requires a context named "test". The work it used to do
+  # is now split across go, ui and scripts, so this aggregates their results
+  # into that one required check. Splitting further only means adding to
+  # `needs` here, with no change to repository settings.
+  #
+  # always() is required: without it a failed dependency makes this job
+  # skipped rather than failed, and a skipped required check does not block a
+  # merge. Each result is then asserted explicitly, so cancelled and skipped
+  # both fail too.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [go, ui, scripts]
+    if: always()
+    steps:
+      - name: Verify the test jobs all passed
+        run: |
+          echo "go=${{ needs.go.result }} ui=${{ needs.ui.result }} scripts=${{ needs.scripts.result }}"
+          for result in "${{ needs.go.result }}" "${{ needs.ui.result }}" "${{ needs.scripts.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "A required test job did not succeed."
+              exit 1
+            fi
+          done
 
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+
+      # Rotates weekly so a cached binary cannot go stale enough to miss new
+      # advisories, while keeping the compile off most runs.
+      - name: Compute govulncheck cache week
+        run: echo "CACHE_WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
+
+      - name: Cache govulncheck
+        id: govulncheck-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/go/bin/govulncheck
+          key: govulncheck-${{ runner.os }}-${{ env.CACHE_WEEK }}
+
+      # govulncheck is built with whatever Go it requires, which is ahead of the
+      # version this project targets. setup-go pins GOTOOLCHAIN=local, so that
+      # has to be opened up for this step alone. Doing it here rather than
+      # job-wide keeps the test jobs honest: they must build on go-version as
+      # declared, with no toolchain fetched behind our backs.
+      - name: Install govulncheck
+        if: steps.govulncheck-cache.outputs.cache-hit != 'true'
+        env:
+          GOTOOLCHAIN: auto
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck (backend)
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
           # GO-2026-4887, GO-2026-4883: docker/docker AuthZ plugin vulns, Fixed in: N/A
           # Tracked in https://github.com/imdsutil/barnacle-imds-proxy/issues/44
           # Dependabot (gomod/backend) will open a PR when Docker ships a fix - remove these then
@@ -81,7 +168,6 @@ jobs:
 
       - name: Run govulncheck (proxy)
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
           output=$(govulncheck -C proxy ./... 2>&1) || true
           echo "$output"
           unsuppressed=$(echo "$output" | grep -oE "GO-[0-9]+-[0-9]+" | sort -u | grep -vE "^(GO-2026-4887|GO-2026-4883)$") || true
@@ -90,15 +176,17 @@ jobs:
             exit 1
           fi
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ui/package.json
+
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: "10"
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Install UI dependencies
         run: cd ui && pnpm install
@@ -113,7 +201,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
