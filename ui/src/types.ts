@@ -59,6 +59,23 @@ export const isSettingsResponse = (value: unknown): value is SettingsResponse =>
 };
 
 /**
+ * Type guard to validate a single container entry
+ */
+const isContainerInfo = (value: unknown): value is ContainerInfo => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const c = value as Record<string, unknown>;
+  return (
+    typeof c.containerId === 'string' &&
+    typeof c.name === 'string' &&
+    typeof c.labels === 'object' &&
+    c.labels !== null &&
+    Array.isArray(c.addresses)
+  );
+};
+
+/**
  * Type guard to validate containers response
  */
 export const isContainersResponse = (value: unknown): value is ContainersResponse => {
@@ -66,5 +83,9 @@ export const isContainersResponse = (value: unknown): value is ContainersRespons
     return false;
   }
   const v = value as Record<string, unknown>;
-  return Array.isArray(v.containers) && typeof v.proxyStatus === 'string';
+  return (
+    Array.isArray(v.containers) &&
+    v.containers.every(isContainerInfo) &&
+    typeof v.proxyStatus === 'string'
+  );
 };

@@ -76,6 +76,10 @@ describe('Type Guards', () => {
       expect(isContainersResponse({ proxyStatus: 'running' })).toBe(false);
     });
 
+    it('should return false when a container element is malformed', () => {
+      expect(isContainersResponse({ containers: [{}], proxyStatus: 'running' })).toBe(false);
+    });
+
     it('should return false when proxyStatus field is missing', () => {
       expect(isContainersResponse({ containers: [] })).toBe(false);
     });

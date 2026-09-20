@@ -40,6 +40,7 @@ import {
 } from './types';
 import { ContainersTable } from './components/ContainersTable';
 import { SettingsForm } from './components/SettingsForm';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   Stack,
   Typography,
@@ -132,7 +133,16 @@ export function App() {
         setProxyContainerState(result.proxyStatus);
         setProxyUnreachable(false);
       } else if (isMountedRef.current) {
-        showSnackbar('Unexpected containers response format', 'error');
+        // A malformed payload means the backend is not usable, so treat it
+        // like a failed request. Only the first one gets a snackbar, otherwise
+        // every poll tick stacks another error toast that never auto-dismisses.
+        if (consecutiveFailuresRef.current === 0) {
+          showSnackbar('Unexpected containers response format', 'error');
+        }
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= UNREACHABLE_THRESHOLD) {
+          setProxyUnreachable(true);
+        }
       }
     } catch (error) {
       console.error('Failed to load containers:', error);
@@ -314,26 +324,30 @@ export function App() {
             </Alert>
           )}
 
-          <ContainersTable
-            containers={containers}
-            isLoading={isLoadingContainers}
-            onCopyToClipboard={copyToClipboard}
-            proxyUnreachable={proxyUnreachable}
-            onProxyHelp={() => setProxyHelpOpen(true)}
-          />
+          <ErrorBoundary>
+            <ContainersTable
+              containers={containers}
+              isLoading={isLoadingContainers}
+              onCopyToClipboard={copyToClipboard}
+              proxyUnreachable={proxyUnreachable}
+              onProxyHelp={() => setProxyHelpOpen(true)}
+            />
+          </ErrorBoundary>
         </Box>
       )}
 
       {/* Settings tab */}
       {activeTab === 1 && (
         <Box sx={{ maxWidth: 600 }}>
-          <SettingsForm
-            ddClient={ddClient}
-            service={service}
-            showSnackbar={showSnackbar}
-            proxyUnreachable={proxyUnreachable}
-            onProxyHelp={() => setProxyHelpOpen(true)}
-          />
+          <ErrorBoundary>
+            <SettingsForm
+              ddClient={ddClient}
+              service={service}
+              showSnackbar={showSnackbar}
+              proxyUnreachable={proxyUnreachable}
+              onProxyHelp={() => setProxyHelpOpen(true)}
+            />
+          </ErrorBoundary>
         </Box>
       )}
 
