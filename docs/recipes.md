@@ -166,7 +166,11 @@ Returns an access token for the resource requested by the container. Reads the `
 
 ## GCP
 
-Returns an access token for the service account named in the container's `GCP_SERVICE_ACCOUNT` label. If the label is not set, falls back to the active `gcloud` account. Requires the `gcloud` CLI.
+Serves the GCE metadata endpoints that Google SDKs request: the detection probe, the access token, the service account details, and the project ID. Returns a token for the service account named in the container's `GCP_SERVICE_ACCOUNT` label. If the label is not set, falls back to the active `gcloud` account. Requires the `gcloud` CLI, `jq`, and `socat`.
+
+Every response carries the `Metadata-Flavor: Google` header. Google clients check this header to confirm they reached a real metadata server. Without it, detection fails and the client never asks for a token.
+
+Google SDKs written in Python, including `gcloud`, also need a host entry on the container. See [Providers that also need a host entry](../README.md#providers-that-also-need-a-host-entry).
 
 1. Label your container:
 
@@ -183,27 +187,57 @@ Returns an access token for the service account named in the container's `GCP_SE
    ```bash
    #!/usr/bin/env bash
    PORT=${1:-8080}
-   while true; do
-     {
-       # Discard the request line; GCP token endpoint has no path-dependent behavior
-       read -r _req
+   # socat keeps listening and forks one handler per connection. A one-shot nc loop
+   # is unreachable while it rebinds, which breaks SDKs that make several calls in a
+   # row, and Google clients make several.
+   if [ "$1" != "--handle" ]; then
+     exec socat TCP-LISTEN:$PORT,reuseaddr,fork SYSTEM:"bash $(realpath "$0") --handle"
+   fi
 
-       # Read headers until the blank line that ends the HTTP header block
-       while IFS= read -r h && [ "$h" != $'\r' ]; do
-         # ${h,,} lowercases the header name for case-insensitive matching
-         [[ "${h,,}" == x-container-labels:* ]] && LABELS="${h#*: }"
-       done
+   # Everything below runs once per request, with the socket on stdin and stdout.
+   # Read the HTTP request line (e.g. "GET /computeMetadata/v1/... HTTP/1.1")
+   read -r line
+   PATH_REQ=$(echo "$line" | awk '{print $2}')
 
-       SA=$(echo "$LABELS" | jq -r '.GCP_SERVICE_ACCOUNT // empty')
+   # Read headers until the blank line that ends the HTTP header block
+   while IFS= read -r h && [ "$h" != $'\r' ]; do
+     # ${h,,} lowercases the header name for case-insensitive matching
+     [[ "${h,,}" == x-container-labels:* ]] && LABELS="${h#*: }"
+   done
+
+   SA=$(echo "$LABELS" | jq -r '.GCP_SERVICE_ACCOUNT // empty')
+   STATUS="200 OK"
+   CTYPE="text/plain"
+   BODY=""
+
+   case "$PATH_REQ" in
+     # Google clients probe / first to confirm they reached a metadata server
+     /)
+       ;;
+     */service-accounts/default/token*)
        # ${SA:+--impersonate-service-account=$SA} expands to nothing if SA is unset
        TOKEN=$(gcloud auth print-access-token ${SA:+--impersonate-service-account=$SA})
-       # date -d is GNU (Linux); date -v is BSD (macOS). Try both.
-       EXPIRY=$(date -u -d "+3599 seconds" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v+3599S +"%Y-%m-%dT%H:%M:%SZ")
        BODY="{\"access_token\":\"$TOKEN\",\"expires_in\":3599,\"token_type\":\"Bearer\"}"
-       printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${#BODY}\r\nConnection: close\r\n\r\n$BODY"
-     # nc handles one HTTP request per invocation; the outer loop restarts it for the next request
-     } | nc -l -p $PORT -q 1
-   done
+       CTYPE="application/json"
+       ;;
+     */service-accounts/default/*recursive=true*)
+       # The email field is required; google-auth fails without it
+       EMAIL=${SA:-$(gcloud config get-value account)}
+       BODY="{\"aliases\":[\"default\"],\"email\":\"$EMAIL\",\"scopes\":[\"https://www.googleapis.com/auth/cloud-platform\"]}"
+       CTYPE="application/json"
+       ;;
+     */service-accounts/default/email*)
+       # The Go SDK asks for the email directly instead of the recursive form
+       BODY=${SA:-$(gcloud config get-value account)}
+       ;;
+     */project/project-id*)
+       BODY=$(gcloud config get-value project)
+       ;;
+     *)
+       STATUS="404 Not Found"
+       ;;
+   esac
+   printf "HTTP/1.1 $STATUS\r\nMetadata-Flavor: Google\r\nContent-Type: $CTYPE\r\nContent-Length: ${#BODY}\r\nConnection: close\r\n\r\n$BODY"
    ```
 
    If you use PowerShell, run this version instead:
@@ -217,14 +251,41 @@ Returns an access token for the service account named in the container's `GCP_SE
    $listener.Start()
    Write-Host "GCP IMDS server listening on port $port"
    while ($listener.IsListening) {
-       $ctx = $listener.GetContext()
-       $labels = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
-       $sa    = $labels?["GCP_SERVICE_ACCOUNT"]
-       $token = if ($sa) { gcloud auth print-access-token --impersonate-service-account=$sa }
-                else { gcloud auth print-access-token }
-       $body  = @{ access_token=$token.Trim(); expires_in=3599; token_type="Bearer" } | ConvertTo-Json -Compress
+       $ctx    = $listener.GetContext()
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
+       $sa     = $labels["GCP_SERVICE_ACCOUNT"]
+       $url    = $ctx.Request.RawUrl
+       # Google clients check this header to confirm they reached a metadata server
+       $ctx.Response.Headers.Add("Metadata-Flavor", "Google")
+       if ($url -eq "/") {
+           # Google clients probe / first to confirm they reached a metadata server
+           $body = ""
+           $ctx.Response.ContentType = "text/plain"
+       } elseif ($url -match "service-accounts/default/token") {
+           $token = if ($sa) { gcloud auth print-access-token --impersonate-service-account=$sa }
+                    else { gcloud auth print-access-token }
+           $body  = @{ access_token=$token.Trim(); expires_in=3599; token_type="Bearer" } | ConvertTo-Json -Compress
+           $ctx.Response.ContentType = "application/json"
+       } elseif ($url -match "service-accounts/default/.*recursive=true") {
+           # The email field is required; google-auth fails without it
+           $email = if ($sa) { $sa } else { (gcloud config get-value account).Trim() }
+           $body  = @{ aliases=@("default"); email=$email
+                       scopes=@("https://www.googleapis.com/auth/cloud-platform") } | ConvertTo-Json -Compress
+           $ctx.Response.ContentType = "application/json"
+       } elseif ($url -match "service-accounts/default/email") {
+           # The Go SDK asks for the email directly instead of the recursive form
+           $body = if ($sa) { $sa } else { (gcloud config get-value account).Trim() }
+           $ctx.Response.ContentType = "text/plain"
+       } elseif ($url -match "project/project-id") {
+           $body = (gcloud config get-value project).Trim()
+           $ctx.Response.ContentType = "text/plain"
+       } else {
+           $ctx.Response.StatusCode = 404
+           $ctx.Response.Close()
+           continue
+       }
        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
-       $ctx.Response.ContentType = "application/json"
        $ctx.Response.ContentLength64 = $bytes.Length
        $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
        $ctx.Response.Close()
