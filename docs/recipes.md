@@ -87,21 +87,22 @@ Handles the IMDSv2 token endpoint, credentials and region in one server. Reads `
    Write-Host "AWS IMDS server listening on port $port"
    while ($listener.IsListening) {
        $ctx = $listener.GetContext()
-       $labels = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
        $path = $ctx.Request.Url.AbsolutePath
        $ctx.Response.ContentType = "text/plain"
        if ($ctx.Request.HttpMethod -eq "PUT" -and $path -like "*/latest/api/token") {
            # IMDSv2 token. The client sends it back in X-aws-ec2-metadata-token, which this server does not check.
            $body = "barnacle-imdsv2-token"
        } elseif ($path -like "*/placement/region") {
-           $body = if ($labels?["AWS_DEFAULT_REGION"]) { $labels["AWS_DEFAULT_REGION"] }
+           $body = if ($labels["AWS_DEFAULT_REGION"]) { $labels["AWS_DEFAULT_REGION"] }
                    elseif ($env:AWS_DEFAULT_REGION) { $env:AWS_DEFAULT_REGION }
                    else { "us-east-1" }
        } elseif ($path -like "*/iam/security-credentials/") {
            # The client reads the role name here, then asks for that role's credentials
            $body = $role
        } elseif ($path -like "*/iam/security-credentials/$role") {
-           $profile = if ($labels?["AWS_PROFILE"]) { $labels["AWS_PROFILE"] } else { "default" }
+           $profile = if ($labels["AWS_PROFILE"]) { $labels["AWS_PROFILE"] } else { "default" }
            $creds = aws sts get-session-token --profile $profile --query Credentials --output json | ConvertFrom-Json
            $body  = @{ Code="Success"; Type="AWS-HMAC"; AccessKeyId=$creds.AccessKeyId
                        SecretAccessKey=$creds.SecretAccessKey; Token=$creds.SessionToken
@@ -177,10 +178,11 @@ Returns an access token for the resource requested by the container. Reads the `
    Write-Host "Azure IMDS server listening on port $port"
    while ($listener.IsListening) {
        $ctx = $listener.GetContext()
-       $labels   = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
        $resource = if ($ctx.Request.QueryString["resource"]) { $ctx.Request.QueryString["resource"] }
                    else { "https://management.azure.com/" }
-       $clientId = $labels?["AZURE_CLIENT_ID"]
+       $clientId = $labels["AZURE_CLIENT_ID"]
        $args     = @("account", "get-access-token", "--resource", $resource, "--output", "json")
        if ($clientId) { $args += "--client-id"; $args += $clientId }
        $token = & az @args | ConvertFrom-Json
@@ -340,8 +342,9 @@ Returns RAM role credentials. Reports the role name from the `ALIBABA_ROLE` labe
    Write-Host "Alibaba Cloud IMDS server listening on port $port"
    while ($listener.IsListening) {
        $ctx    = $listener.GetContext()
-       $labels = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
-       $role   = if ($labels?["ALIBABA_ROLE"]) { $labels["ALIBABA_ROLE"] } else { "barnacle" }
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
+       $role   = if ($labels["ALIBABA_ROLE"]) { $labels["ALIBABA_ROLE"] } else { "barnacle" }
        $path   = $ctx.Request.Url.AbsolutePath
        $ctx.Response.ContentType = "text/plain"
        if ($ctx.Request.HttpMethod -eq "PUT" -and $path -like "*/latest/api/token") {
@@ -351,7 +354,7 @@ Returns RAM role credentials. Reports the role name from the `ALIBABA_ROLE` labe
            # The client reads the role name here, then asks for that role's credentials
            $body = $role
        } elseif ($path -like "*/ram/security-credentials/$role") {
-           $roleArn = $labels?["ALIBABA_ROLE_ARN"]
+           $roleArn = $labels["ALIBABA_ROLE_ARN"]
            $creds   = aliyun sts AssumeRole --RoleArn $roleArn --RoleSessionName barnacle-session --output json | ConvertFrom-Json
            $body    = @{ Code="Success"; AccessKeyId=$creds.Credentials.AccessKeyId
                          AccessKeySecret=$creds.Credentials.AccessKeySecret
@@ -445,8 +448,9 @@ Returns CAM role credentials. Reads the `TENCENT_ROLE` label to select which CAM
    Write-Host "Tencent Cloud IMDS server listening on port $port"
    while ($listener.IsListening) {
        $ctx    = $listener.GetContext()
-       $labels = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
-       $role   = if ($labels?["TENCENT_ROLE"]) { $labels["TENCENT_ROLE"] } else { "barnacle" }
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
+       $role   = if ($labels["TENCENT_ROLE"]) { $labels["TENCENT_ROLE"] } else { "barnacle" }
        $path   = $ctx.Request.Url.AbsolutePath
        $ctx.Response.ContentType = "text/plain"
        if ($path -like "*/cam/security-credentials/") {
@@ -571,15 +575,16 @@ One server handles both AWS and Azure. It routes by the `CLOUD_PROVIDER` contain
    Write-Host "Multi-cloud IMDS server listening on port $port"
    while ($listener.IsListening) {
        $ctx      = $listener.GetContext()
-       $labels   = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
-       $provider = if ($labels?["CLOUD_PROVIDER"]) { $labels["CLOUD_PROVIDER"] } else { "aws" }
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
+       $provider = if ($labels["CLOUD_PROVIDER"]) { $labels["CLOUD_PROVIDER"] } else { "aws" }
        $path     = $ctx.Request.Url.AbsolutePath
        if ($ctx.Request.HttpMethod -eq "PUT" -and $path -like "*/latest/api/token" -and $provider -eq "aws") {
            # IMDSv2 token. The client sends it back in X-aws-ec2-metadata-token, which this server does not check.
            $body = "barnacle-imdsv2-token"
            $ctx.Response.ContentType = "text/plain"
        } elseif ($path -like "*/placement/region") {
-           $body = if ($labels?["AWS_DEFAULT_REGION"]) { $labels["AWS_DEFAULT_REGION"] }
+           $body = if ($labels["AWS_DEFAULT_REGION"]) { $labels["AWS_DEFAULT_REGION"] }
                    elseif ($env:AWS_DEFAULT_REGION) { $env:AWS_DEFAULT_REGION }
                    else { "us-east-1" }
            $ctx.Response.ContentType = "text/plain"
@@ -588,7 +593,7 @@ One server handles both AWS and Azure. It routes by the `CLOUD_PROVIDER` contain
            $body = $role
            $ctx.Response.ContentType = "text/plain"
        } elseif ($path -like "*/iam/security-credentials/$role" -and $provider -eq "aws") {
-           $profile = if ($labels?["AWS_PROFILE"]) { $labels["AWS_PROFILE"] } else { "default" }
+           $profile = if ($labels["AWS_PROFILE"]) { $labels["AWS_PROFILE"] } else { "default" }
            $creds = aws sts get-session-token --profile $profile --query Credentials --output json | ConvertFrom-Json
            $body  = @{ Code="Success"; Type="AWS-HMAC"; AccessKeyId=$creds.AccessKeyId
                        SecretAccessKey=$creds.SecretAccessKey; Token=$creds.SessionToken
@@ -597,7 +602,7 @@ One server handles both AWS and Azure. It routes by the `CLOUD_PROVIDER` contain
        } elseif ($ctx.Request.RawUrl -match "metadata/identity/oauth2/token" -and $provider -eq "azure") {
            $resource = if ($ctx.Request.QueryString["resource"]) { $ctx.Request.QueryString["resource"] }
                        else { "https://management.azure.com/" }
-           $clientId = $labels?["AZURE_CLIENT_ID"]
+           $clientId = $labels["AZURE_CLIENT_ID"]
            $args     = @("account", "get-access-token", "--resource", $resource, "--output", "json")
            if ($clientId) { $args += "--client-id"; $args += $clientId }
            $token = & az @args | ConvertFrom-Json
