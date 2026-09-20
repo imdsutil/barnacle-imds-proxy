@@ -252,8 +252,9 @@ Google SDKs written in Python, including `gcloud`, also need a host entry on the
    Write-Host "GCP IMDS server listening on port $port"
    while ($listener.IsListening) {
        $ctx    = $listener.GetContext()
-       $labels = $ctx.Request.Headers["x-container-labels"] | ConvertFrom-Json -AsHashtable
-       $sa     = $labels?["GCP_SERVICE_ACCOUNT"]
+       $labelsRaw = $ctx.Request.Headers["x-container-labels"]
+       $labels    = if ($labelsRaw) { $labelsRaw | ConvertFrom-Json -AsHashtable } else { @{} }
+       $sa     = $labels["GCP_SERVICE_ACCOUNT"]
        $url    = $ctx.Request.RawUrl
        # Google clients check this header to confirm they reached a metadata server
        $ctx.Response.Headers.Add("Metadata-Flavor", "Google")
