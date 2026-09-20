@@ -44,11 +44,18 @@ const writeTimeout = 5 * time.Second
 
 const cacheTTL = 60 * time.Second
 
+// negativeCacheTTL is deliberately short. A lookup can miss simply because the
+// backend has not indexed a newly started container's IP yet, so a negative
+// result is treated as provisional rather than as a stable fact.
+const negativeCacheTTL = 1 * time.Second
+
 var forwardURL atomic.Value
 
 var lookupCache sync.Map
 
 var now = time.Now
+
+var lookupRetryDelay = 150 * time.Millisecond
 
 var backendDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
 	var dialer net.Dialer
@@ -234,9 +241,55 @@ func lookupContainerByIP(ctx context.Context, ip string) (*lookupResponse, error
 
 	log.Printf("Cache miss for IP %s, performing lookup", ip)
 
-	payload, err := json.Marshal(lookupRequest{IP: ip})
+	response, found, err := queryBackendForIP(ctx, ip)
 	if err != nil {
 		return nil, err
+	}
+
+	// A miss can simply mean the backend has not indexed a just-started
+	// container's IP yet. Containers that query IMDS immediately on startup hit
+	// this window, so retry once before treating not-found as the answer.
+	if !found {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(lookupRetryDelay):
+		}
+
+		log.Printf("Lookup for IP %s missed, retrying once", ip)
+		response, found, err = queryBackendForIP(ctx, ip)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !found {
+		lookupCache.Store(ip, cacheEntry{
+			response:  nil,
+			found:     false,
+			expiresAt: now().Add(negativeCacheTTL),
+		})
+		log.Printf("Cached negative lookup for IP %s", ip)
+
+		return nil, nil
+	}
+
+	lookupCache.Store(ip, cacheEntry{
+		response:  response,
+		found:     true,
+		expiresAt: now().Add(cacheTTL),
+	})
+	log.Printf("Cached lookup result for IP %s", ip)
+
+	return response, nil
+}
+
+// queryBackendForIP asks the backend which container owns an IP. The boolean
+// reports whether a container was found, which is distinct from an error.
+func queryBackendForIP(ctx context.Context, ip string) (*lookupResponse, bool, error) {
+	payload, err := json.Marshal(lookupRequest{IP: ip})
+	if err != nil {
+		return nil, false, err
 	}
 
 	client := &http.Client{
@@ -248,49 +301,35 @@ func lookupContainerByIP(ctx context.Context, ip string) (*lookupResponse, error
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, backendLookupPath, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		lookupCache.Store(ip, cacheEntry{
-			response:  nil,
-			found:     false,
-			expiresAt: now().Add(cacheTTL),
-		})
-		log.Printf("Cached negative lookup for IP %s", ip)
-		return nil, nil
+		return nil, false, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(string(body))
+		return nil, false, errors.New(string(body))
 	}
 
 	var response lookupResponse
 	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	// Store in cache
-	lookupCache.Store(ip, cacheEntry{
-		response:  &response,
-		found:     true,
-		expiresAt: now().Add(cacheTTL),
-	})
-	log.Printf("Cached lookup result for IP %s", ip)
-
-	return &response, nil
+	return &response, true, nil
 }
 
 func fetchForwardURL(ctx context.Context) (string, error) {
@@ -408,7 +447,10 @@ func handleContainerDestroyed(w http.ResponseWriter, r *http.Request) {
 	count := 0
 	lookupCache.Range(func(key, value interface{}) bool {
 		entry := value.(cacheEntry)
-		if entry.response != nil && entry.response.ContainerID == req.ContainerID {
+		// Negative entries are keyed by IP with no container attached, so they
+		// are dropped on any container teardown. Leaving them would let a new
+		// container that reuses the IP inherit the previous failure.
+		if !entry.found || (entry.response != nil && entry.response.ContainerID == req.ContainerID) {
 			lookupCache.Delete(key)
 			count++
 		}
