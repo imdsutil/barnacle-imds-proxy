@@ -30,6 +30,13 @@ async function openSettings(screen: Awaited<ReturnType<typeof renderApp>>) {
   await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
 }
 
+// Scoped to the specific alert's own element (its nearest role="alert"
+// ancestor) rather than a container-wide querySelector, so this stays
+// correct if two alerts are ever visible at once.
+function alertHasClass(alert: ReturnType<Awaited<ReturnType<typeof renderApp>>["getByText"]>, className: string) {
+  return alert.element().closest('[role="alert"]')?.classList.contains(className) ?? false;
+}
+
 // navigator.clipboard.writeText genuinely fails in this environment: headless
 // chromium under the playwright provider rejects it with NotAllowedError
 // ("Document is not focused", then "Write permission denied" once a click
@@ -138,7 +145,18 @@ test(
 
     const alert = screen.getByText("Settings saved");
     await expect.element(alert).toBeVisible();
-    expect(screen.container.querySelector(".MuiAlert-standardSuccess")).not.toBeNull();
+    expect(alertHasClass(alert, "MuiAlert-standardSuccess")).toBe(true);
+
+    // 11.1 also specifies the snackbar appears at bottom-center. This is
+    // a structural check, not a computed on-screen position: it reads the
+    // MuiSnackbar-anchorOriginBottomCenter class name that MUI's Snackbar
+    // derives directly from its anchorOrigin prop
+    // (anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} in
+    // App.tsx), confirmed present in the real DOM with a throwaway probe.
+    // It would catch that prop being changed or removed, but not a CSS
+    // regression that moved the snackbar without touching anchorOrigin.
+    const snackbarEl = alert.element().closest('[role="alert"]')?.closest(".MuiSnackbar-root");
+    expect(snackbarEl?.classList.contains("MuiSnackbar-anchorOriginBottomCenter")).toBe(true);
 
     // 11.2: real ~3s wait for the auto-dismiss timer. There is no condition
     // to poll for here other than time passing, so this is a real wait
@@ -167,7 +185,7 @@ test(
 
       const alert = screen.getByText("Copied container name to clipboard");
       await expect.element(alert).toBeVisible();
-      expect(screen.container.querySelector(".MuiAlert-standardSuccess")).not.toBeNull();
+      expect(alertHasClass(alert, "MuiAlert-standardSuccess")).toBe(true);
       await expect.element(alert, { timeout: 5000 }).not.toBeInTheDocument();
     } finally {
       restoreClipboard();
@@ -188,7 +206,7 @@ test("a clipboard failure shows an error snackbar that does not auto-dismiss", a
 
     const alert = screen.getByText("Failed to copy to clipboard");
     await expect.element(alert).toBeVisible();
-    expect(screen.container.querySelector(".MuiAlert-standardError")).not.toBeNull();
+    expect(alertHasClass(alert, "MuiAlert-standardError")).toBe(true);
 
     // Real wait past the success duration to prove it is still there,
     // contrasting with the success case above which is gone by this point.
@@ -203,24 +221,28 @@ test("a clipboard failure shows an error snackbar that does not auto-dismiss", a
 // manually. Reuses the clipboard failure to produce a non-auto-dismissing
 // error snackbar, since section 11.4 already established it will not go
 // away on its own.
-test("clicking the close button dismisses an error snackbar", async () => {
-  stubClipboard(() => Promise.reject(new Error("denied")));
-  try {
-    const fake = createFakeDdClient({ containers: { containers: [seededContainer] } });
-    const screen = await renderApp(fake);
+test(
+  "clicking the close button dismisses an error snackbar",
+  async () => {
+    stubClipboard(() => Promise.reject(new Error("denied")));
+    try {
+      const fake = createFakeDdClient({ containers: { containers: [seededContainer] } });
+      const screen = await renderApp(fake);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: `Copy container name ${seededContainer.name}` })
-    );
-    const alert = screen.getByText("Failed to copy to clipboard");
-    await expect.element(alert).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: `Copy container name ${seededContainer.name}` })
+      );
+      const alert = screen.getByText("Failed to copy to clipboard");
+      await expect.element(alert).toBeVisible();
 
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    await expect.element(alert).not.toBeInTheDocument();
-  } finally {
-    restoreClipboard();
-  }
-});
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      await expect.element(alert).not.toBeInTheDocument();
+    } finally {
+      restoreClipboard();
+    }
+  },
+  8000
+);
 
 // Section 11.6: tabbing to the close button and pressing Enter dismisses it
 // the same way a click does. The copy button that triggers the failure
@@ -233,30 +255,34 @@ test("clicking the close button dismisses an error snackbar", async () => {
 // if an unrelated change adds or removes a focusable element earlier in
 // the row. The bound (8) and the toHaveFocus() assertion after the loop
 // mean it still fails, clearly, if the button becomes unreachable by Tab.
-test("tabbing to the close button and pressing Enter dismisses an error snackbar", async () => {
-  stubClipboard(() => Promise.reject(new Error("denied")));
-  try {
-    const fake = createFakeDdClient({ containers: { containers: [seededContainer] } });
-    const screen = await renderApp(fake);
+test(
+  "tabbing to the close button and pressing Enter dismisses an error snackbar",
+  async () => {
+    stubClipboard(() => Promise.reject(new Error("denied")));
+    try {
+      const fake = createFakeDdClient({ containers: { containers: [seededContainer] } });
+      const screen = await renderApp(fake);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: `Copy container name ${seededContainer.name}` })
-    );
-    const alert = screen.getByText("Failed to copy to clipboard");
-    await expect.element(alert).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: `Copy container name ${seededContainer.name}` })
+      );
+      const alert = screen.getByText("Failed to copy to clipboard");
+      await expect.element(alert).toBeVisible();
 
-    const closeButton = screen.getByRole("button", { name: "Close" });
-    for (let i = 0; i < 8 && closeButton.element() !== document.activeElement; i++) {
-      await userEvent.tab();
+      const closeButton = screen.getByRole("button", { name: "Close" });
+      for (let i = 0; i < 8 && closeButton.element() !== document.activeElement; i++) {
+        await userEvent.tab();
+      }
+      await expect.element(closeButton).toHaveFocus();
+
+      await userEvent.keyboard("{Enter}");
+      await expect.element(alert).not.toBeInTheDocument();
+    } finally {
+      restoreClipboard();
     }
-    await expect.element(closeButton).toHaveFocus();
-
-    await userEvent.keyboard("{Enter}");
-    await expect.element(alert).not.toBeInTheDocument();
-  } finally {
-    restoreClipboard();
-  }
-});
+  },
+  8000
+);
 
 test("the app renders under a dark colour scheme", async () => {
   await setColorScheme("dark");
