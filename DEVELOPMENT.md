@@ -15,7 +15,7 @@ make build-extension
 make install-extension
 ```
 
-This builds both the extension image and the proxy image, then installs the extension into Docker Desktop. If you already have it installed and want to pick up changes:
+This builds both the extension image and the proxy image. Then it installs the extension into Docker Desktop. If you already have it installed and want to pick up changes:
 
 ```bash
 make update-extension
@@ -28,7 +28,7 @@ the manual test plan. They split by what each one can reach rather than by
 component. `make test` is the gate: everything in the first table runs there,
 so it also runs on every pull request. Everything in the second needs something
 CI does not have (a real Docker daemon, an installed extension, another
-checkout, eyes) and is run by hand.
+checkout, a human) and runs manually.
 
 Runs in `make test`, and therefore in CI:
 
@@ -41,7 +41,7 @@ Runs in `make test`, and therefore in CI:
 | vitest build guard | Builds the UI and greps the emitted bundles, to prove the browser test harness never ships | `ui/src/__tests__/noHarnessInBuild.test.ts` |
 | bats | Argument handling and teardown logic of `gui-debug.sh`, hermetically | `scripts/test-gui-debug.sh` |
 
-Run by hand:
+Run manually:
 
 | Tool | What it covers | When |
 |---|---|---|
@@ -77,13 +77,13 @@ make test-integration
 make test-coverage
 ```
 
-There's also `make bench` for benchmarks and `make regression` for lint + tests + integration tests in one shot.
+Use `make bench` for benchmarks and `make regression` to run lint, tests, and integration tests together.
 
 ### End-to-end tests
 
 The e2e tests use [bats](https://github.com/bats-core/bats-core) and run against a live extension install. Install bats with `npm install -g bats`, `brew install bats-core`, or `apt install bats`.
 
-The test script starts its own test server and cleans up after itself. The extension must be installed and its URL set to `localhost:8080` before running:
+The test script starts its own test server and cleans up after itself. Before you run the tests, install the extension and set its URL to `localhost:8080`. Then run:
 
 ```bash
 make test-e2e
@@ -100,7 +100,7 @@ make lint-fix      # pre-commit on all files
 
 ## Test server
 
-The repo includes a test IMDS server for local development. Run it in a separate terminal before starting your test containers:
+The repo includes a test IMDS server for local development. Before starting your test containers, run it in a separate terminal:
 
 ```bash
 make run-test-server
@@ -109,7 +109,7 @@ make run-test-server
 make run-test-server-port PORT=9000
 ```
 
-The server runs in the foreground and logs all incoming requests, including headers. Point the extension at `http://localhost:8080` (or your custom port) - the proxy rewrites `localhost` to `host.docker.internal` automatically.
+The server runs in the foreground and logs all incoming requests, including headers. Point the extension at `http://localhost:8080` (or your custom port). The proxy rewrites `localhost` to `host.docker.internal` automatically.
 
 ## UI development
 
@@ -122,7 +122,7 @@ pnpm test         # Vitest
 pnpm run build    # Production build
 ```
 
-Note that `pnpm dev` runs a standalone Vite server, which is useful for working on the UI, but the Docker Desktop extension API calls won't work outside of Docker Desktop. You'll see an error on init. The build output is what actually gets packaged into the extension image.
+`pnpm dev` runs a standalone Vite server, which is useful for working on the UI, but the Docker Desktop extension API calls won't work outside of Docker Desktop. You'll see an error on init. The build output is what gets packaged into the extension image.
 
 Browser tests render the real app in Chromium:
 
@@ -143,7 +143,7 @@ docker extension dev debug barnacle-imds-proxy      # DevTools on each tab click
 docker extension dev reset barnacle-imds-proxy      # undo both
 ```
 
-Until you reset, the extension tab depends on the dev server staying up. Note that `vite.config.ts` sets `strictPort`, so `pnpm dev` fails outright if something else already holds port 3000 rather than picking another one.
+Until you reset, the extension tab depends on the dev server staying up. `vite.config.ts` sets `strictPort`, so `pnpm dev` fails if something else already holds port 3000, rather than picking another one.
 
 ## Debugging the extension inside Docker Desktop
 
@@ -158,7 +158,7 @@ sudo apt install xserver-xephyr xdotool imagemagick
 ./scripts/gui-debug.sh stop            # put everything back
 ```
 
-`shot` and `click` default to the extension webview, which is its own X window, so coordinates read off a screenshot can be passed straight to `click`. Use `--target dashboard` for Docker Desktop's own chrome and `--full` to capture the whole display.
+`shot` and `click` default to the extension webview, which is its own X window, so you can pass coordinates from a screenshot straight to `click`. Use `--target dashboard` for Docker Desktop's own chrome and `--full` to capture the whole display.
 
 Xephyr is software-rendered, so Docker Desktop is slow inside it. Run `stop` when you are finished. It tears down the whole dev setup: removes the systemd drop-in, restarts Docker Desktop on the normal display, stops Xephyr, resets the extension's `ui-source` and debug mode, and stops this checkout's Vite dev server. It only ever stops a Vite running out of this repo, so another project's dev server on the same port is left alone.
 

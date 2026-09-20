@@ -2,7 +2,7 @@
 
 ## Extension backend not responding
 
-The extension UI shows a warning banner if it can't reach the controller. This usually means the `imds-proxy-controller` container stopped or crashed.
+If the extension can't reach the controller, the UI shows a warning banner. This usually means the `imds-proxy-controller` container stopped or crashed.
 
 Try these steps in order:
 
@@ -14,7 +14,7 @@ Try these steps in order:
 
 4. **Reboot.** If nothing else works, a reboot clears any VM networking issues.
 
-To check whether the containers are actually running:
+To check whether the containers are running:
 
 ```bash
 docker ps --filter name=imds-proxy
@@ -37,7 +37,7 @@ docker logs imds-proxy
 
 **Check the URL is saved.** Open the Settings tab and confirm the URL field shows what you expect. If it's empty, the proxy has nowhere to forward requests.
 
-**Check the proxy is running.** The Containers tab shows a warning if the proxy container has stopped or crashed.
+**Check the proxy is running.** If the proxy container has stopped or crashed, the Containers tab shows a warning.
 
 **Check the container has the label.** Only containers with `imds-proxy.enabled=true` are attached to the IMDS networks. Containers without the label get connection refused.
 
@@ -47,7 +47,7 @@ docker inspect <container-name> --format '{{index .Config.Labels "imds-proxy.ena
 
 Should output `true`.
 
-**Check network attachment.** The Networks column in the Containers tab shows a chip per configured IP — green means connected. To check directly:
+**Check network attachment.** The Networks column in the Containers tab shows a chip per configured IP: green means connected. To check directly:
 
 ```bash
 docker inspect <container-name> --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
@@ -63,7 +63,7 @@ docker exec <container-name> wget -qO- --timeout=5 http://169.254.169.254/
 
 If that times out but the container is attached to the IMDS network, the proxy may not be running.
 
-**Check your server is listening on `0.0.0.0`.** The proxy forwards requests from inside the Docker Desktop VM using `host.docker.internal`. If your server is bound to `127.0.0.1` only, those connections will be refused. Make sure it listens on `0.0.0.0`.
+**Check your server is listening on `0.0.0.0`.** The proxy forwards requests from inside the Docker Desktop VM using `host.docker.internal`. If your server is bound to `127.0.0.1` only, those connections will be refused.
 
 ---
 
@@ -83,9 +83,9 @@ You should see one network per configured IP address (e.g. `.imds-169.254.169.0`
 
 ## Container is not in the Containers tab
 
-The Containers tab only shows containers that have the `imds-proxy.enabled=true` label and are currently running. Stopped containers are not listed.
+The Containers tab only shows containers that have the `imds-proxy.enabled=true` label and are running. Stopped containers are not listed.
 
-If a container is running and labeled but not showing up, check whether the backend is reachable (the warning banner would appear if not). You can also check controller logs to see if the attach event was processed:
+If a container is running and labeled but not showing up, check whether the backend is reachable (if it isn't, the warning banner appears). You can also check controller logs to see if the attach event was processed:
 
 ```bash
 docker logs imds-proxy-controller | grep <container-name>

@@ -1,6 +1,6 @@
 # Test Server
 
-A simple HTTP server for local development and testing of the IMDS proxy extension.
+An HTTP server for local development and testing of the IMDS proxy extension.
 
 ## Running
 
