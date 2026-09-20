@@ -124,6 +124,16 @@ global and getting `undefined`.
 A build-output test, not a convention. `noHarnessInBuild.test.ts` runs
 `pnpm build` and greps the emitted bundles for harness markers.
 
+The child build has to be given a scrubbed environment first. A vitest process
+carries `VITEST=true`, which is the very flag `vite.config.ts` keys the
+test-only module alias off, and `NODE_ENV=test`, which stops Vite resolving the
+build as production. Inheriting either one means the test reads a bundle nobody
+ships: the first swaps the real client for the vitest mock, the second bundles
+React's development build. The test therefore asserts on the artifact as well
+as on the markers, using a string from the real client and a React
+development-only warning, so the two ways of scanning the wrong bundle both
+fail loudly.
+
 The markers have to be chosen for what survives esbuild. Identifiers are
 mangled, so grepping for `createFakeDdClient` proves nothing; string literals
 and property accesses survive, so the test looks for the literal
