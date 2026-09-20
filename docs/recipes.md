@@ -226,6 +226,10 @@ Google SDKs written in Python, including `gcloud`, also need a host entry on the
        BODY="{\"aliases\":[\"default\"],\"email\":\"$EMAIL\",\"scopes\":[\"https://www.googleapis.com/auth/cloud-platform\"]}"
        CTYPE="application/json"
        ;;
+     */service-accounts/default/email*)
+       # The Go SDK asks for the email directly instead of the recursive form
+       BODY=${SA:-$(gcloud config get-value account)}
+       ;;
      */project/project-id*)
        BODY=$(gcloud config get-value project)
        ;;
@@ -268,6 +272,10 @@ Google SDKs written in Python, including `gcloud`, also need a host entry on the
            $body  = @{ aliases=@("default"); email=$email
                        scopes=@("https://www.googleapis.com/auth/cloud-platform") } | ConvertTo-Json -Compress
            $ctx.Response.ContentType = "application/json"
+       } elseif ($url -match "service-accounts/default/email") {
+           # The Go SDK asks for the email directly instead of the recursive form
+           $body = if ($sa) { $sa } else { (gcloud config get-value account).Trim() }
+           $ctx.Response.ContentType = "text/plain"
        } elseif ($url -match "project/project-id") {
            $body = (gcloud config get-value project).Trim()
            $ctx.Response.ContentType = "text/plain"
