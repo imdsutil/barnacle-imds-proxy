@@ -89,6 +89,17 @@ pnpm run build    # Production build
 
 Note that `pnpm dev` runs a standalone Vite server, which is useful for working on the UI, but the Docker Desktop extension API calls won't work outside of Docker Desktop. You'll see an error on init. The build output is what actually gets packaged into the extension image.
 
+Browser tests render the real app in Chromium:
+
+```bash
+cd ui
+pnpm test --project=browser        # browser suite only
+pnpm test --project=unit           # jsdom suite only
+pnpm exec playwright install chromium --with-deps   # first run only
+```
+
+Tests marked `.skip` reference an open issue. Remove the `.skip` in the PR that fixes the issue rather than in a separate change.
+
 To point the installed extension at that dev server instead of its bundled build:
 
 ```bash

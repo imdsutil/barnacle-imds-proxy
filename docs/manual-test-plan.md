@@ -4,6 +4,33 @@ Run on each platform: **macOS**, **Windows**, **Linux**.
 
 ---
 
+## Before a release
+
+Most of this plan is automated in `ui/src/__tests__/browser/`, run by `make test`.
+The sections below point to the file that covers each one and list what is
+left, including a few checks the browser suite cannot exercise at all
+(hover-only visuals, real mouse clicks on already keyboard-tested controls,
+and item counts) and five that are disabled pending open issues.
+
+Four things the browser suite can never cover, regardless of what else gets
+automated:
+
+1. The extension tab appears in Docker Desktop and opens.
+2. Settings save and reload correctly against the real backend, which proves the
+   real `@docker/extension-api-client` transport still matches the fake.
+3. Light and dark mode look right, which the suite cannot prove because it
+   supplies stub theme objects rather than Docker Desktop's real ones.
+4. Copying a container name or id actually places it on the system clipboard.
+   `navigator.clipboard.writeText` always rejects in headless Chromium under
+   Playwright, with NotAllowedError, even after granting the CDP clipboard
+   permissions. The browser suite therefore stubs `writeText` and exercises the
+   click, the handler wiring and the snackbar, but never a real clipboard write.
+
+`scripts/gui-debug.sh` drives the real extension if you want to do these without
+clicking. The rest of this document lists what each section still needs by hand.
+
+---
+
 ## Prerequisites
 
 - Docker Desktop installed and running
@@ -20,20 +47,26 @@ Run on each platform: **macOS**, **Windows**, **Linux**.
 
 ## 1. Initial load
 
+Automated in `ui/src/__tests__/browser/containers.browser.test.tsx` and
+`a11y.browser.test.tsx`.
+
+Checks 1.7 and 9.10 originally said "Tab to the tab bar" / "Tab to Settings
+tab, press Enter". MUI Tabs use the ARIA roving tabindex pattern: Tab lands on
+the currently selected tab, Arrow keys move between tabs, and Tab again leaves
+the tablist. You cannot Tab directly to an unselected tab. The rows below are
+reworded to match the real pattern and are covered by
+`a11y.browser.test.tsx`'s keyboard tests.
+
 | # | Action | Expected |
 |---|--------|----------|
-| 1.1 | Open the extension | Header with logo and "Barnacle IMDS Proxy" title is visible |
-| 1.2 | | "View documentation" link is visible in the top-right |
-| 1.3 | | "Containers" tab is active by default |
-| 1.4 | | Loading skeleton appears briefly, then resolves |
-| 1.5 | Tab from the browser/app focus into the extension | Focus enters the header area |
-| 1.6 | Tab through the header | "View documentation" link is reachable and visibly focused |
-| 1.7 | Tab to the tab bar | "Containers" and "Settings" tabs are reachable |
-| 1.8 | Press Enter or Space on a tab | Tab switches |
+| 1.7 | Tab into the tab bar, then press Right Arrow to reach the Settings tab | "Containers" and "Settings" tabs are both reachable this way |
 
 ---
 
 ## 2. Containers tab - empty state
+
+Automated in `ui/src/__tests__/browser/containers.browser.test.tsx` and
+`a11y.browser.test.tsx`, except:
 
 zsh/bash:
 ```shell
@@ -47,17 +80,20 @@ $ids = docker ps -q --filter label=imds-proxy.enabled=true; if ($ids) { docker r
 
 | # | Action | Expected |
 |---|--------|----------|
-| 2.1 | Ensure no labeled containers are running | "No labeled containers are running." message is shown centered in the table area |
-| 2.2 | | Item count at bottom-right reads "Showing 0 items" |
-| 2.3 | Tab through the empty state | Focus does not get trapped; label code element and "View documentation" link remain reachable |
+| 2.2 | Ensure no labeled containers are running | Item count at bottom-right reads "Showing 0 items" |
 
 ---
 
 ## 3. Label copy affordance
 
+Automated in `ui/src/__tests__/browser/containers.browser.test.tsx` covers
+that the label hint text is visible. The copy interaction on the label code
+element itself (as opposed to the per-row name/id copy icons) is not
+exercised anywhere in the suite, and hover styling is not something the
+headless suite can observe.
+
 | # | Action | Expected |
 |---|--------|----------|
-| 3.1 | Observe the label hint line above the table | `imds-proxy.enabled=true` code element is visible with a small copy icon inside it |
 | 3.2 | Click the code element | Snackbar shows "Copied label to clipboard"; clipboard contains `imds-proxy.enabled=true` |
 | 3.3 | Tab to the code element, press Enter | Same clipboard and snackbar result as 3.2 |
 | 3.4 | Tab to the code element, press Space | Same result |
@@ -67,6 +103,12 @@ $ids = docker ps -q --filter label=imds-proxy.enabled=true; if ($ids) { docker r
 
 ## 4. Containers tab - with labeled containers
 
+Automated in `ui/src/__tests__/browser/containers.browser.test.tsx`,
+`a11y.browser.test.tsx`, and the clipboard tests in
+`appearance.browser.test.tsx` (name copy only). Remaining gaps: hover-reveal
+of the icons, the ID copy icon specifically, mouse-click (as opposed to
+keyboard) row expand/collapse, and the item count.
+
 ```shell
 docker run -d --rm --name test-imds-1 --label imds-proxy.enabled=true alpine sleep 3600
 docker run -d --rm --name test-imds-2 --label imds-proxy.enabled=true alpine sleep 3600
@@ -74,10 +116,8 @@ docker run -d --rm --name test-imds-2 --label imds-proxy.enabled=true alpine sle
 
 | # | Action | Expected |
 |---|--------|----------|
-| 4.1 | Containers appear in the table | Row shows container name, truncated ID, per-IP address chips, and a collapse arrow |
-| 4.2 | | Item count at bottom-right updates |
+| 4.2 | Containers appear in the table | Item count at bottom-right updates |
 | 4.3 | Hover a row | Name copy icon and ID copy icon appear |
-| 4.4 | Click name copy icon | Snackbar "Copied container name to clipboard"; clipboard contains the name |
 | 4.5 | Click ID copy icon | Snackbar "Copied container ID to clipboard"; clipboard contains the full ID |
 | 4.6 | Click a row | Row expands to show a "Labels" section with key/value pairs in monospace |
 | 4.7 | Click the row again | Row collapses |
@@ -85,23 +125,18 @@ docker run -d --rm --name test-imds-2 --label imds-proxy.enabled=true alpine sle
 
 ### Keyboard accessibility
 
-| # | Action | Expected |
-|---|--------|----------|
-| 4.9 | Tab to a row | Row receives visible focus |
-| 4.10 | Press Enter on focused row | Row expands |
-| 4.11 | Press Space on focused row | Row expands/collapses |
-| 4.12 | Tab into an expanded row | Focus moves into the label content area |
-| 4.13 | Tab to the name copy icon | Icon is focusable; press Enter copies the name |
-| 4.14 | Tab to the ID copy icon | Icon is focusable; press Enter copies the full ID |
-| 4.15 | Tab to the expand/collapse arrow | Arrow is focusable; press Enter toggles the row |
-| 4.16 | Tab past the last interactive element in a row | Focus moves to the next row cleanly |
-| 4.17 | Shift+Tab from first element of a row | Focus moves back to the previous row or element |
+Automated in `ui/src/__tests__/browser/a11y.browser.test.tsx` (checks
+4.9-4.17).
 
 ---
 
 ## 5. Network connectivity chips
 
 Requires the containers from section 4 and at least one IP configured in Settings (e.g. `169.254.169.254`).
+
+The browser suite's fixtures only ever set `connected: true`, so the
+disconnected chip colour, the tooltip text, and the live transition after
+stopping/starting the proxy are not covered.
 
 | # | Action | Expected |
 |---|--------|----------|
@@ -126,6 +161,11 @@ Expected output contains one network per configured IP subnet: `.imds-169.254.16
 
 Requires at least 2 labeled containers (see section 4).
 
+`ui/src/__tests__/browser/containers.browser.test.tsx` asserts that
+containers render sorted by name; it never clicks a column header, so the
+click-to-sort and click-to-reverse interactions, and the keyboard
+equivalents, are not exercised.
+
 | # | Action | Expected |
 |---|--------|----------|
 | 6.1 | Click "Name" column header | Rows sort ascending by name; sort arrow visible |
@@ -139,6 +179,11 @@ Requires at least 2 labeled containers (see section 4).
 ---
 
 ## 7. Proxy container state alerts
+
+`ui/src/__tests__/browser/proxyState.browser.test.tsx` confirms that each of
+the four abnormal statuses produces a visible `role="alert"`, but not the
+alert's wording, its action button, or what happens when that button is
+clicked.
 
 ### 7a. Stopped
 
@@ -196,9 +241,14 @@ Stop the controller to simulate a dead backend:
 docker stop imds-proxy-controller
 ```
 
+`ui/src/__tests__/browser/appearance.browser.test.tsx` covers 8.1, the
+Containers tab unreachable banner appearing after consecutive poll failures.
+Nothing in the browser suite touches the Settings tab's own warning, the
+unsaved-edit revert behaviour, the "Get help" dialog, or its contents; those
+remain fully manual.
+
 | # | Action | Expected |
 |---|--------|----------|
-| 8.1 | Containers tab | Warning alert appears: "Extension backend not responding - list may be outdated" with "Get help" button |
 | 8.2 | Settings tab | Warning alert: "Extension backend not responding. Your last saved settings are shown below, but changes cannot be saved." with "Get help" button |
 | 8.3 | Settings tab: edit the URL field | Field reverts to the previously saved value after a few seconds |
 | 8.4 | Tab to "Get help" button | Button receives visible focus; button is vertically centered in the alert |
@@ -226,27 +276,12 @@ docker start imds-proxy-controller
 
 ## 9. Settings tab
 
+Automated in `ui/src/__tests__/browser/settings.browser.test.tsx` and the
+keyboard checks in `a11y.browser.test.tsx` (9.10-9.14).
+
 | # | Action | Expected |
 |---|--------|----------|
-| 9.1 | Click "Settings" tab | Settings form visible with "IMDS server URL" field |
-| 9.2 | | Previously saved URL is pre-populated |
-| 9.3 | | "Save Settings" button is disabled when the field matches the saved value |
-| 9.4 | Clear the URL field and click Save | Validation error: "URL is required" |
-| 9.5 | Enter `not-a-url` and click Save | Validation error: "Enter a valid URL (e.g. http://localhost:8080)" |
-| 9.6 | Enter `http://localhost:8080` and click Save | Button shows "Saving..." briefly, then "Saved"; snackbar "Settings saved" |
-| 9.7 | | Button returns to disabled |
-| 9.8 | Edit the URL field | Button re-enables and shows "Save Settings" |
 | 9.9 | Navigate to Containers tab, return to Settings | Saved URL still shown |
-
-### Keyboard accessibility
-
-| # | Action | Expected |
-|---|--------|----------|
-| 9.10 | Tab to "Settings" tab, press Enter | Settings tab activates |
-| 9.11 | Tab to the URL field | Field receives visible focus |
-| 9.12 | Edit the field using keyboard only | Value changes; Save button enables |
-| 9.13 | Tab to "Save Settings", press Enter | Save triggers; same result as click |
-| 9.14 | Submit an empty field via keyboard | Validation error appears; focus remains near the field |
 
 ### External settings update (polling)
 
@@ -264,14 +299,25 @@ PowerShell:
 docker exec imds-proxy-controller curl -sf --unix-socket /run/guest-services/backend.sock -X POST -H "Content-Type: application/json" -d '{\"url\":\"http://localhost:9999\"}' http://localhost/settings
 ```
 
+9.15 (the external update landing in the field) has no automated coverage.
+9.16 has a disabled test: `settings.browser.test.tsx` has
+`test.skip("a settings poll does not overwrite text being typed", ...)`,
+reproducing issue #64, where a poll response that resolves while the user has
+since started typing overwrites their keystrokes. It stays here, marked as
+disabled pending that fix, rather than being deleted or run as-is.
+
 | # | Action | Expected |
 |---|--------|----------|
 | 9.15 | Run the command while on the Settings tab | URL field updates to `http://localhost:9999` within ~5 seconds with no skeleton flicker |
-| 9.16 | Edit the URL field (leave unsaved), run the external update | External change does NOT overwrite the unsaved edit |
+| 9.16 | Edit the URL field (leave unsaved), run the external update | External change does NOT overwrite the unsaved edit. **Automation disabled**: covered by a `test.skip` in `settings.browser.test.tsx` pending issue #64. |
 
 ---
 
 ## 10. Documentation link
+
+The browser suite can assert that `host.openExternal` is called with the
+correct URL, but not that Docker Desktop actually opens it in the system
+browser rather than inside itself. Stays manual.
 
 | # | Action | Expected |
 |---|--------|----------|
@@ -283,18 +329,18 @@ docker exec imds-proxy-controller curl -sf --unix-socket /run/guest-services/bac
 
 ## 11. Snackbar behavior
 
-| # | Action | Expected |
-|---|--------|----------|
-| 11.1 | Save valid settings | Green snackbar appears at bottom-center |
-| 11.2 | Wait ~3 seconds | Snackbar auto-dismisses |
-| 11.3 | Copy a container name or ID | Green snackbar appears and auto-dismisses |
-| 11.4 | Trigger a clipboard error (revoke clipboard permission in OS settings) | Red snackbar appears and does NOT auto-dismiss |
-| 11.5 | Click the X on an error snackbar | Dismisses manually |
-| 11.6 | Tab to the X button on an error snackbar, press Enter | Dismisses manually |
+Automated in `ui/src/__tests__/browser/appearance.browser.test.tsx`.
 
 ---
 
 ## 12. Light/dark mode
+
+`ui/src/__tests__/browser/appearance.browser.test.tsx` proves the app renders
+under each `prefers-color-scheme` and that the scheme signal reaches the
+page, using stub theme objects (`window.__ddMuiV6Themes` set to empty
+objects). It proves nothing about actual colours, contrast, or focus ring
+visibility, which stay manual (also listed in the smoke list at the top of
+this document).
 
 Switch in Docker Desktop → Settings → Appearance.
 
@@ -308,6 +354,9 @@ Switch in Docker Desktop → Settings → Appearance.
 ---
 
 ## 13. Proxy traffic (functional end-to-end)
+
+Needs no GUI; belongs to `scripts/test-e2e.sh`, not this plan or the browser
+suite.
 
 Requires the `mendhak/http-https-echo` container running (see Prerequisites) and the extension URL set to `http://localhost:8080`.
 
