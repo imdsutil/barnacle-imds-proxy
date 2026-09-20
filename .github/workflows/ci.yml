@@ -38,6 +38,12 @@ jobs:
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+
       - name: Install Playwright Chromium
         run: cd ui && pnpm exec playwright install chromium --with-deps
 

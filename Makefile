@@ -58,7 +58,7 @@ run-test-server-port: ## Run the test HTTP server on a custom port: make run-tes
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
-test: test-coverage test-race test-stress test-scripts test-ui-browser ## Run all tests with coverage, race detection, and stress. Set VERBOSE_TESTS=1 to show detailed logs.
+test: test-coverage test-race test-stress test-scripts ## Run all tests with coverage, race detection, and stress. Set VERBOSE_TESTS=1 to show detailed logs.
 
 test-backend: ## Run backend tests
 	@echo "$(INFO_COLOR)Running backend tests...$(NO_COLOR)"
@@ -95,6 +95,9 @@ test-proxy-coverage: ## Run proxy tests with coverage
 	cd proxy && go test ./... -coverprofile=coverage.out
 	cd proxy && go tool cover -func=coverage.out | awk '/^total:/{if ($$3+0 < $(COVERAGE_MIN)) {print "Proxy coverage below $(COVERAGE_MIN)%"; exit 1}}'
 
+# Runs both vitest projects (unit and browser), so the browser suite is covered by
+# `make test` through this target. Do not scope it to --project=unit for speed;
+# that silently drops the browser suite from CI and coverage.
 test-ui-coverage: ## Run UI tests with coverage
 	@echo "$(INFO_COLOR)Running UI coverage...$(NO_COLOR)"
 	cd ui && pnpm test --coverage
