@@ -122,7 +122,7 @@ Handles the IMDSv2 token endpoint, credentials and region in one server. Reads `
 
 ## Azure
 
-Returns an access token for the resource requested by the container. Reads the `resource` query parameter from the IMDS request and passes it to the Azure CLI. The `AZURE_CLIENT_ID` label selects a specific managed identity. If you omit it, the server uses the active `az` account. Requires the Azure CLI.
+Returns an access token for the resource requested by the container. Reads the `resource` query parameter from the IMDS request and passes it to the Azure CLI. The `AZURE_CLIENT_ID` label selects a specific managed identity. If you omit it, the server uses the active `az` account. Requires the Azure CLI, `socat` and `jq`.
 
 1. Label your container:
 
@@ -139,27 +139,29 @@ Returns an access token for the resource requested by the container. Reads the `
    ```bash
    #!/usr/bin/env bash
    PORT=${1:-8080}
-   while true; do
-     {
-       # Read the HTTP request line and extract the resource query parameter from the URL
-       read -r line
-       QUERY=$(echo "$line" | awk '{print $2}' | grep -o 'resource=[^&]*' | cut -d= -f2-)
-       RESOURCE=${QUERY:-https://management.azure.com/}
+   # socat keeps listening and forks one handler per connection. A one-shot nc loop
+   # is unreachable while it rebinds, which breaks SDKs that make several calls in a row.
+   if [ "$1" != "--handle" ]; then
+     exec socat TCP-LISTEN:$PORT,reuseaddr,fork SYSTEM:"bash $(realpath "$0") --handle"
+   fi
 
-       # Read headers until the blank line that ends the HTTP header block
-       while IFS= read -r h && [ "$h" != $'\r' ]; do
-         # ${h,,} lowercases the header name for case-insensitive matching
-         [[ "${h,,}" == x-container-labels:* ]] && LABELS="${h#*: }"
-       done
+   # Everything below runs once per request, with the socket on stdin and stdout.
+   # Read the HTTP request line and extract the resource query parameter from the URL
+   read -r line
+   QUERY=$(echo "$line" | awk '{print $2}' | grep -o 'resource=[^&]*' | cut -d= -f2-)
+   RESOURCE=${QUERY:-https://management.azure.com/}
 
-       CLIENT_ID=$(echo "$LABELS" | jq -r '.AZURE_CLIENT_ID // empty')
-       # ${CLIENT_ID:+--client-id "$CLIENT_ID"} expands to nothing if CLIENT_ID is unset
-       TOKEN=$(az account get-access-token --resource "$RESOURCE" ${CLIENT_ID:+--client-id "$CLIENT_ID"} --output json)
-       BODY=$(echo "$TOKEN" | jq -c '{access_token:.accessToken,expires_in:3599,token_type:"Bearer"}')
-       printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${#BODY}\r\nConnection: close\r\n\r\n$BODY"
-     # nc handles one HTTP request per invocation; the outer loop restarts it for the next request
-     } | nc -l -p $PORT -q 1
+   # Read headers until the blank line that ends the HTTP header block
+   while IFS= read -r h && [ "$h" != $'\r' ]; do
+     # ${h,,} lowercases the header name for case-insensitive matching
+     [[ "${h,,}" == x-container-labels:* ]] && LABELS="${h#*: }"
    done
+
+   CLIENT_ID=$(echo "$LABELS" | jq -r '.AZURE_CLIENT_ID // empty')
+   # ${CLIENT_ID:+--client-id "$CLIENT_ID"} expands to nothing if CLIENT_ID is unset
+   TOKEN=$(az account get-access-token --resource "$RESOURCE" ${CLIENT_ID:+--client-id "$CLIENT_ID"} --output json)
+   BODY=$(echo "$TOKEN" | jq -c '{access_token:.accessToken,expires_in:3599,token_type:"Bearer"}')
+   printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${#BODY}\r\nConnection: close\r\n\r\n$BODY"
    ```
 
    If you use PowerShell, run this version instead:
@@ -418,9 +420,11 @@ Returns CAM role credentials. Reads the `TENCENT_ROLE` label to select which CAM
      BODY="$ROLE"
    elif [[ "$PATH_REQ" == */cam/security-credentials/"$ROLE" ]]; then
      # Look up the caller's UIN (account ID) to construct the full role ARN
-     CREDS=$(tccli sts AssumeRole --RoleArn "qcs::cam::uin/$(tccli sts GetCallerIdentity --output json | jq -r '.UserId'):roleName/$ROLE" --RoleSessionName barnacle-session --output json)
-     BODY=$(echo "$CREDS" | jq -c '.Credentials | {Code:"Success",TmpSecretId:.TmpSecretId,
-       TmpSecretKey:.TmpSecretKey,Token:.Token,ExpiredTime:(.ExpiredTime|tostring)}')
+     CREDS=$(tccli sts AssumeRole --RoleArn "qcs::cam::uin/$(tccli sts GetCallerIdentity --output json | jq -r '.AccountId'):roleName/$ROLE" --RoleSessionName barnacle-session --output json)
+     # ExpiredTime and Expiration sit beside Credentials in the response, not inside it
+     BODY=$(echo "$CREDS" | jq -c '{Code:"Success",TmpSecretId:.Credentials.TmpSecretId,
+       TmpSecretKey:.Credentials.TmpSecretKey,Token:.Credentials.Token,
+       ExpiredTime:.ExpiredTime,Expiration:.Expiration}')
      CTYPE="application/json"
    else
      STATUS="404 Not Found"
@@ -449,13 +453,15 @@ Returns CAM role credentials. Reads the `TENCENT_ROLE` label to select which CAM
            $body = $role
        } elseif ($path -like "*/cam/security-credentials/$role") {
            # Look up the caller's UIN to construct the full role ARN
-           $uid   = tccli sts GetCallerIdentity --output json | ConvertFrom-Json | Select-Object -ExpandProperty UserId
+           $uid   = tccli sts GetCallerIdentity --output json | ConvertFrom-Json | Select-Object -ExpandProperty AccountId
            $arn   = "qcs::cam::uin/${uid}:roleName/$role"
            $creds = tccli sts AssumeRole --RoleArn $arn --RoleSessionName barnacle-session --output json | ConvertFrom-Json
+           # ExpiredTime and Expiration sit beside Credentials in the response, not inside it
            $body  = @{ Code="Success"; TmpSecretId=$creds.Credentials.TmpSecretId
                        TmpSecretKey=$creds.Credentials.TmpSecretKey
                        Token=$creds.Credentials.Token
-                       ExpiredTime=$creds.Credentials.ExpiredTime } | ConvertTo-Json -Compress
+                       ExpiredTime=$creds.ExpiredTime
+                       Expiration=$creds.Expiration } | ConvertTo-Json -Compress
            $ctx.Response.ContentType = "application/json"
        } else {
            $ctx.Response.StatusCode = 404
