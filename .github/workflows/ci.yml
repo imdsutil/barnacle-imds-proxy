@@ -48,11 +48,13 @@ jobs:
       - uses: actions/checkout@v7
 
       # Must come before setup-node, which needs the pnpm binary on PATH to
-      # resolve the store path for its cache. The version is omitted on
-      # purpose: ui/package.json pins packageManager, and supplying both makes
-      # this action fail on conflicting versions.
+      # resolve the store path for its cache. package_json_file is required
+      # because the action reads the pinned packageManager from the repository
+      # root by default, and this repo's package.json lives in ui/.
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ui/package.json
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -115,8 +117,15 @@ jobs:
           path: ~/go/bin/govulncheck
           key: govulncheck-${{ runner.os }}-${{ env.CACHE_WEEK }}
 
+      # govulncheck is built with whatever Go it requires, which is ahead of the
+      # version this project targets. setup-go pins GOTOOLCHAIN=local, so that
+      # has to be opened up for this step alone. Doing it here rather than
+      # job-wide keeps the test jobs honest: they must build on go-version as
+      # declared, with no toolchain fetched behind our backs.
       - name: Install govulncheck
         if: steps.govulncheck-cache.outputs.cache-hit != 'true'
+        env:
+          GOTOOLCHAIN: auto
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck (backend)
@@ -144,6 +153,8 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ui/package.json
 
       - name: Set up Node
         uses: actions/setup-node@v7
