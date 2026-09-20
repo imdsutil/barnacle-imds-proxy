@@ -165,10 +165,14 @@ Expected output contains one network per configured IP subnet: `.imds-169.254.16
 
 Requires at least 2 labeled containers (see section 4).
 
-`ui/src/__tests__/browser/containers.browser.test.tsx` asserts that
-containers render sorted by name; it never clicks a column header, so the
-click-to-sort and click-to-reverse interactions, and the keyboard
-equivalents, are not exercised.
+Fully automated. `ui/src/__tests__/browser/containers.browser.test.tsx`
+covers 6.1 to 6.4 by clicking both column headers and asserting ascending and
+descending order, and `ui/src/__tests__/browser/a11y.browser.test.tsx` covers
+6.5 to 6.7 by reaching each header with real Tab traversal and activating it
+with Enter.
+
+The table below is kept for reference. Run it by hand only when changing the
+sort implementation or the table's markup.
 
 | # | Action | Expected |
 |---|--------|----------|
@@ -245,11 +249,20 @@ Stop the controller to simulate a dead backend:
 docker stop imds-proxy-controller
 ```
 
-`ui/src/__tests__/browser/appearance.browser.test.tsx` covers 8.1, the
-Containers tab unreachable banner appearing after consecutive poll failures.
-Nothing in the browser suite touches the Settings tab's own warning, the
-unsaved-edit revert behaviour, the "Get help" dialog, or its contents; those
-remain fully manual.
+Almost fully automated. `ui/src/__tests__/browser/appearance.browser.test.tsx`
+covers 8.1, the Containers tab unreachable banner. `proxyState.browser.test.tsx`
+covers 8.2 and 8.6, 8.8 and 8.10: the Settings tab warning, the dialog's
+recovery steps, the troubleshooting link, and clean recovery when the backend
+returns. `a11y.browser.test.tsx` covers 8.4, 8.7 and 8.9: reaching "Get help"
+by Tab, tabbing through the dialog, and dismissing it by Escape and by the
+close button with focus returning to the trigger. 8.5 is exercised by every
+test that opens the dialog rather than having one of its own.
+
+**8.3 is NOT covered and is a known bug.** The test for it is skipped against
+issue #76: the settings poll only reloads when the form has no unsaved edits,
+so an edit made during an outage never reverts. Check 8.3 by hand until that
+is fixed. Note the expected behaviour itself is under discussion on #76, since
+silently reverting a user's typing is arguably the wrong remedy.
 
 | # | Action | Expected |
 |---|--------|----------|
