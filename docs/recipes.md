@@ -187,9 +187,9 @@ Google SDKs written in Python, including `gcloud`, also need a host entry on the
    ```bash
    #!/usr/bin/env bash
    PORT=${1:-8080}
-   # socat keeps listening and forks one handler per connection. The nc loop the
-   # other recipes use serves a single request and is unreachable while it rebinds,
-   # which Google SDKs trip over because they make several calls in a row.
+   # socat keeps listening and forks one handler per connection. A one-shot nc loop
+   # is unreachable while it rebinds, which breaks SDKs that make several calls in a
+   # row, and Google clients make several.
    if [ "$1" != "--handle" ]; then
      exec socat TCP-LISTEN:$PORT,reuseaddr,fork SYSTEM:"bash $(realpath "$0") --handle"
    fi
