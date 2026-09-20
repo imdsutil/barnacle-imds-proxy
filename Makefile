@@ -58,7 +58,7 @@ run-test-server-port: ## Run the test HTTP server on a custom port: make run-tes
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
-test: test-coverage test-race test-stress test-scripts ## Run all tests with coverage, race detection, and stress. Set VERBOSE_TESTS=1 to show detailed logs.
+test: test-coverage test-race test-stress test-scripts test-ui-browser ## Run all tests with coverage, race detection, and stress. Set VERBOSE_TESTS=1 to show detailed logs.
 
 test-backend: ## Run backend tests
 	@echo "$(INFO_COLOR)Running backend tests...$(NO_COLOR)"
@@ -72,6 +72,10 @@ test-scripts: ## Run shell script tests (bats). No display needed.
 	@echo "$(INFO_COLOR)Running script tests...$(NO_COLOR)"
 	@command -v bats >/dev/null 2>&1 || { echo "bats not found. Install with: sudo apt install bats"; exit 1; }
 	bats scripts/test-gui-debug.sh
+
+test-ui-browser: ## Run UI tests in a real browser (Chromium)
+	@echo "$(INFO_COLOR)Running UI browser tests...$(NO_COLOR)"
+	cd ui && pnpm test --project=browser
 
 test-ui: ## Run UI tests with Vitest
 	@echo "$(INFO_COLOR)Running UI tests...$(NO_COLOR)"
@@ -221,7 +225,7 @@ setup: ## Install pre-commit hooks
 .PHONY: build build-backend build-proxy build-ui \
         build-extension install-extension update-extension uninstall-extension prepare-buildx push-extension \
         run-test-server run-test-server-port \
-        test test-backend test-proxy test-ui \
+        test test-backend test-proxy test-ui test-ui-browser \
         test-coverage test-backend-coverage test-proxy-coverage test-ui-coverage \
         test-race test-backend-race test-proxy-race \
         test-stress test-backend-stress test-proxy-stress \
