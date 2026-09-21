@@ -330,7 +330,11 @@ func TestConcurrentContainerTracking(t *testing.T) {
 
 			for j := 0; j < numOperations; j++ {
 				containerID := fmt.Sprintf("container-%d-%d", id, j)
-				ipAddr := fmt.Sprintf("169.254.169.%d", (id*numOperations+j)%254+1)
+				// Each container needs its own address. The assertion below checks
+				// that this container owns its IP in the index, which only holds if
+				// no other goroutine is using the same one. Keep the octets derived
+				// from id and j separately so the addresses stay unique.
+				ipAddr := fmt.Sprintf("169.254.%d.%d", id+1, j+1)
 
 				// Add container to tracking
 				containerInfo := ContainerInfo{
