@@ -53,7 +53,7 @@ test("containers sort by name", async () => {
   });
   const screen = await renderApp(fake);
   await expect.element(screen.getByText("alpha")).toBeVisible();
-  const rows = screen.container.querySelectorAll("tbody tr[aria-expanded]");
+  const rows = screen.container.querySelectorAll("tbody tr:has(button[aria-expanded])");
   expect(rows[0].textContent).toContain("alpha");
 });
 
@@ -131,7 +131,7 @@ const sortableFixture = () =>
 // the row also contains the id and IP address and a whole-row textContent
 // comparison would conflate all three.
 function rowNames(screen: Awaited<ReturnType<typeof renderApp>>) {
-  return Array.from(screen.container.querySelectorAll("tbody tr[aria-expanded]")).map(
+  return Array.from(screen.container.querySelectorAll("tbody tr:has(button[aria-expanded])")).map(
     (row) => row.querySelector("td")?.textContent
   );
 }

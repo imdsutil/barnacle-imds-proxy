@@ -289,7 +289,12 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
                 }
               }}
             />
-            <IconButton onClick={handleAddIP} size="small" sx={{ mt: 0.5 }}>
+            <IconButton
+              onClick={handleAddIP}
+              size="small"
+              aria-label="Add IP address"
+              sx={{ mt: 0.5 }}
+            >
               <AddIcon />
             </IconButton>
           </Box>

@@ -231,5 +231,5 @@ test("a malformed container element renders as a warning row beside the good one
   await expect
     .element(screen.getByRole("img", { name: "Invalid data for this container" }))
     .toBeVisible();
-  expect(screen.container.querySelectorAll("tbody tr[aria-expanded]").length).toBe(2);
+  expect(screen.container.querySelectorAll("tbody tr:has(button[aria-expanded])").length).toBe(2);
 });

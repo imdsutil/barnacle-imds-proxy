@@ -205,7 +205,6 @@ export function ContainersTable({
                       }
                     }}
                     tabIndex={0}
-                    aria-expanded={isExpanded}
                     sx={{
                       cursor: 'pointer',
                       '& .copy-button': {
@@ -285,6 +284,7 @@ export function ContainersTable({
                       <IconButton
                         size="small"
                         aria-label={isExpanded ? 'Collapse labels' : 'Expand labels'}
+                        aria-expanded={isExpanded}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleRowClick(container.containerId);
