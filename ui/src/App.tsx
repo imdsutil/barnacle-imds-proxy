@@ -34,12 +34,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 import {
-  ContainerInfo,
+  DisplayContainer,
   ProxyContainerState,
   isContainersResponse,
 } from './types';
+import { toDisplayContainers } from './utils/containerUtils';
 import { ContainersTable } from './components/ContainersTable';
 import { SettingsForm } from './components/SettingsForm';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   Stack,
   Typography,
@@ -92,7 +94,7 @@ export function App() {
   const [proxyContainerState, setProxyContainerState] = useState<ProxyContainerState | null>(null);
 
   // Container state
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
+  const [containers, setContainers] = useState<DisplayContainer[]>([]);
   const [isLoadingContainers, setIsLoadingContainers] = useState(false);
 
   // Snackbar notification state
@@ -128,11 +130,20 @@ export function App() {
       if (isContainersResponse(result) && isMountedRef.current) {
         hasLoadedOnceRef.current = true;
         consecutiveFailuresRef.current = 0;
-        setContainers(result.containers);
+        setContainers(toDisplayContainers(result.containers));
         setProxyContainerState(result.proxyStatus);
         setProxyUnreachable(false);
       } else if (isMountedRef.current) {
-        showSnackbar('Unexpected containers response format', 'error');
+        // A malformed payload means the backend is not usable, so treat it
+        // like a failed request. Only the first one gets a snackbar, otherwise
+        // every poll tick stacks another error toast that never auto-dismisses.
+        if (consecutiveFailuresRef.current === 0) {
+          showSnackbar('Unexpected containers response format', 'error');
+        }
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= UNREACHABLE_THRESHOLD) {
+          setProxyUnreachable(true);
+        }
       }
     } catch (error) {
       console.error('Failed to load containers:', error);
@@ -314,26 +325,30 @@ export function App() {
             </Alert>
           )}
 
-          <ContainersTable
-            containers={containers}
-            isLoading={isLoadingContainers}
-            onCopyToClipboard={copyToClipboard}
-            proxyUnreachable={proxyUnreachable}
-            onProxyHelp={() => setProxyHelpOpen(true)}
-          />
+          <ErrorBoundary>
+            <ContainersTable
+              containers={containers}
+              isLoading={isLoadingContainers}
+              onCopyToClipboard={copyToClipboard}
+              proxyUnreachable={proxyUnreachable}
+              onProxyHelp={() => setProxyHelpOpen(true)}
+            />
+          </ErrorBoundary>
         </Box>
       )}
 
       {/* Settings tab */}
       {activeTab === 1 && (
         <Box sx={{ maxWidth: 600 }}>
-          <SettingsForm
-            ddClient={ddClient}
-            service={service}
-            showSnackbar={showSnackbar}
-            proxyUnreachable={proxyUnreachable}
-            onProxyHelp={() => setProxyHelpOpen(true)}
-          />
+          <ErrorBoundary>
+            <SettingsForm
+              ddClient={ddClient}
+              service={service}
+              showSnackbar={showSnackbar}
+              proxyUnreachable={proxyUnreachable}
+              onProxyHelp={() => setProxyHelpOpen(true)}
+            />
+          </ErrorBoundary>
         </Box>
       )}
 

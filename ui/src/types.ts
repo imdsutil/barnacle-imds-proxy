@@ -31,6 +31,13 @@ export interface ContainerInfo {
 }
 
 /**
+ * Container entry as rendered, flagged when the backend sent a bad element
+ */
+export interface DisplayContainer extends ContainerInfo {
+  malformed?: boolean;
+}
+
+/**
  * Settings response from backend
  */
 export interface SettingsResponse {
@@ -55,7 +62,34 @@ export interface ContainersResponse {
  * Type guard to validate settings response
  */
 export const isSettingsResponse = (value: unknown): value is SettingsResponse => {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  if (v.url !== undefined && typeof v.url !== 'string') {
+    return false;
+  }
+  return (
+    v.customIPs === undefined ||
+    (Array.isArray(v.customIPs) && v.customIPs.every((ip) => typeof ip === 'string'))
+  );
+};
+
+/**
+ * Type guard to validate a single container entry
+ */
+export const isContainerInfo = (value: unknown): value is ContainerInfo => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const c = value as Record<string, unknown>;
+  return (
+    typeof c.containerId === 'string' &&
+    typeof c.name === 'string' &&
+    typeof c.labels === 'object' &&
+    c.labels !== null &&
+    Array.isArray(c.addresses)
+  );
 };
 
 /**

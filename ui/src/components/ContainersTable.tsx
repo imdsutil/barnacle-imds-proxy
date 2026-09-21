@@ -33,15 +33,17 @@ import {
   Alert,
   Button,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import { ContainerInfo } from '../types';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { DisplayContainer } from '../types';
 import { CONTAINER_ID_DISPLAY_LENGTH } from '../constants';
 import { cleanContainerName } from '../utils/containerUtils';
 
 interface ContainersTableProps {
-  containers: ContainerInfo[];
+  containers: DisplayContainer[];
   isLoading: boolean;
   onCopyToClipboard: (text: string, label: string) => void;
   proxyUnreachable?: boolean;
@@ -146,7 +148,43 @@ export function ContainersTable({
             </TableRow>
           </TableHead>
           <TableBody>
-            {sortedContainers.map((container) => {
+            {sortedContainers.map((container, index) => {
+              if (container.malformed) {
+                // The backend sent an element that is not a container. Show it
+                // rather than dropping it, keyed by index because containerId
+                // may be missing or repeated.
+                return (
+                  <TableRow
+                    key={`malformed-${index}`}
+                    sx={{ bgcolor: (theme) => alpha(theme.palette.error.main, 0.12) }}
+                  >
+                    <TableCell>
+                      <Stack direction="row" alignItems="center" spacing={0.5}>
+                        <Tooltip title="Invalid data for this container">
+                          <WarningAmberIcon
+                            color="error"
+                            fontSize="small"
+                            titleAccess="Invalid data for this container"
+                          />
+                        </Tooltip>
+                        <Typography variant="body1">
+                          {cleanContainerName(container.name)}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body1"
+                        sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                      >
+                        {container.containerId.substring(0, CONTAINER_ID_DISPLAY_LENGTH)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell />
+                    <TableCell padding="checkbox" />
+                  </TableRow>
+                );
+              }
               const displayName = cleanContainerName(container.name);
               const isExpanded = expandedContainer === container.containerId;
               const sortedLabels = Object.entries(container.labels).sort(([a], [b]) =>

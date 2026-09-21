@@ -44,6 +44,15 @@ describe('Type Guards', () => {
     it('should return false for arrays', () => {
       expect(isSettingsResponse([])).toBe(false);
     });
+
+    it('should return false when url is not a string', () => {
+      expect(isSettingsResponse({ url: 123 })).toBe(false);
+    });
+
+    it('should return false when customIPs is not an array of strings', () => {
+      expect(isSettingsResponse({ customIPs: '169.254.169.254' })).toBe(false);
+      expect(isSettingsResponse({ customIPs: [169] })).toBe(false);
+    });
   });
 
   describe('isContainersResponse', () => {
