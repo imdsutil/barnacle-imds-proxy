@@ -395,7 +395,7 @@ func TestGetContainersWithData(t *testing.T) {
 		ContainerID: "abc",
 		Name:        "/test",
 		Labels:      map[string]string{},
-		Networks:    []NetworkInfo{{NetworkName: ".imds-0", NetworkID: "net1"}},
+		Networks:    []NetworkInfo{{NetworkName: ".imds-0", NetworkID: "net1", IPAddress: "169.254.169.2"}},
 	}
 	tracker.mu.Unlock()
 
@@ -435,7 +435,8 @@ func TestGetContainersWithData(t *testing.T) {
 }
 
 func TestBuildAddressStatusesConnected(t *testing.T) {
-	nets := []NetworkInfo{{NetworkName: ".imds-0"}}
+	// A running container holds an address on the network it is attached to.
+	nets := []NetworkInfo{{NetworkName: ".imds-0", IPAddress: "169.254.169.2"}}
 	cfg := []NetworkConfig{{Name: ".imds-0", IPv4Subnet: "169.254.169.0/24", ProxyIPv4: "169.254.169.254"}}
 	ips := []string{"169.254.169.254"}
 
@@ -463,7 +464,7 @@ func TestBuildAddressStatusesNotConnected(t *testing.T) {
 }
 
 func TestBuildAddressStatusesIPv6(t *testing.T) {
-	nets := []NetworkInfo{{NetworkName: ".imds-0"}}
+	nets := []NetworkInfo{{NetworkName: ".imds-0", IPv6Address: "fd00:ec2::2"}}
 	cfg := []NetworkConfig{{Name: ".imds-0", IPv6Subnet: "fd00:ec2::/64", ProxyIPv6: "fd00:ec2::254"}}
 	ips := []string{"fd00:ec2::254"}
 
@@ -474,7 +475,7 @@ func TestBuildAddressStatusesIPv6(t *testing.T) {
 }
 
 func TestBuildAddressStatusesMultiple(t *testing.T) {
-	nets := []NetworkInfo{{NetworkName: ".imds-0"}}
+	nets := []NetworkInfo{{NetworkName: ".imds-0", IPAddress: "169.254.169.2", IPv6Address: "fd00:ec2::2"}}
 	cfg := []NetworkConfig{
 		{Name: ".imds-0", IPv4Subnet: "169.254.169.0/24", ProxyIPv4: "169.254.169.254", IPv6Subnet: "fd00:ec2::/64", ProxyIPv6: "fd00:ec2::254"},
 	}
@@ -488,6 +489,36 @@ func TestBuildAddressStatusesMultiple(t *testing.T) {
 		if !s.Connected {
 			t.Errorf("want %s connected, got not connected", s.IP)
 		}
+	}
+}
+
+// Issue #65: a stopped container stays attached to its networks but holds no
+// address, so matching on attachment alone reported it as connected and the
+// UI showed a green chip for a container that could not answer anything.
+func TestBuildAddressStatusesStoppedContainer(t *testing.T) {
+	// Docker keeps the network entry for a stopped container, with empty IPs.
+	nets := []NetworkInfo{{NetworkName: ".imds-0", IPAddress: "", IPv6Address: ""}}
+	cfg := []NetworkConfig{{Name: ".imds-0", IPv4Subnet: "169.254.169.0/24", ProxyIPv4: "169.254.169.254"}}
+
+	got := buildAddressStatuses(nets, cfg, []string{"169.254.169.254"})
+	if len(got) != 1 {
+		t.Fatalf("want 1 address, got %d", len(got))
+	}
+	if got[0].Connected {
+		t.Errorf("want a stopped container reported as not connected, got %+v", got[0])
+	}
+}
+
+func TestBuildAddressStatusesStoppedContainerIPv6(t *testing.T) {
+	nets := []NetworkInfo{{NetworkName: ".imds-0", IPAddress: "169.254.169.2", IPv6Address: ""}}
+	cfg := []NetworkConfig{{Name: ".imds-0", IPv6Subnet: "fd00:ec2::/64", ProxyIPv6: "fd00:ec2::254"}}
+
+	got := buildAddressStatuses(nets, cfg, []string{"fd00:ec2::254"})
+	if len(got) != 1 {
+		t.Fatalf("want 1 address, got %d", len(got))
+	}
+	if got[0].Connected {
+		t.Errorf("want no IPv6 address reported as not connected, got %+v", got[0])
 	}
 }
 

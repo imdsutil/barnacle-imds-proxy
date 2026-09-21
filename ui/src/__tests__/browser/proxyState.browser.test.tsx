@@ -32,7 +32,7 @@ test.each(["stopped", "paused", "failed", "missing"])(
 test("a running proxy shows no alert", async () => {
   const fake = createFakeDdClient({ proxyStatus: "running" });
   const screen = await renderApp(fake);
-  await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
+  await expect.element(screen.getByText("No labeled containers found.")).toBeVisible();
   expect(screen.container.querySelector('[role="alert"]')).toBeNull();
 });
 

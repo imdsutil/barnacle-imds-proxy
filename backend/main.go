@@ -920,18 +920,28 @@ func ipInNetworkConfig(ip string, cfg NetworkConfig) bool {
 // buildAddressStatuses returns one AddressStatus per configured IP, reporting
 // whether the container is connected to the network that covers that address.
 func buildAddressStatuses(containerNetworks []NetworkInfo, netConfig []NetworkConfig, ips []string) []AddressStatus {
-	connectedNames := make(map[string]bool, len(containerNetworks))
+	byName := make(map[string]NetworkInfo, len(containerNetworks))
 	for _, n := range containerNetworks {
-		connectedNames[n.NetworkName] = true
+		byName[n.NetworkName] = n
 	}
 	statuses := make([]AddressStatus, 0, len(ips))
 	for _, ip := range ips {
 		connected := false
 		for _, cfg := range netConfig {
-			if ipInNetworkConfig(ip, cfg) {
-				connected = connectedNames[cfg.Name]
-				break
+			if !ipInNetworkConfig(ip, cfg) {
+				continue
 			}
+			// Attachment alone is not enough. Docker keeps the network entry
+			// for a stopped container but drops its address, so require an
+			// address of the same family as the configured one.
+			if info, attached := byName[cfg.Name]; attached {
+				if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() != nil {
+					connected = info.IPAddress != ""
+				} else {
+					connected = info.IPv6Address != ""
+				}
+			}
+			break
 		}
 		statuses = append(statuses, AddressStatus{IP: ip, Connected: connected})
 	}

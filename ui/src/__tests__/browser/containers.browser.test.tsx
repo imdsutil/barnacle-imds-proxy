@@ -28,7 +28,7 @@ const container = (name: string, containerId: string, ip = "169.254.169.254") =>
 
 test("empty state tells the user no labeled containers are running", async () => {
   const screen = await renderApp(createFakeDdClient());
-  await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
+  await expect.element(screen.getByText("No labeled containers found.")).toBeVisible();
 });
 
 test("the enabling label is shown so it can be copied", async () => {
@@ -108,7 +108,7 @@ test("a loading skeleton appears while containers are first loading, then resolv
 
   resolveContainers({ containers: [], proxyStatus: "running" });
 
-  await expect.element(screen.getByText("No labeled containers are running.")).toBeVisible();
+  await expect.element(screen.getByText("No labeled containers found.")).toBeVisible();
   expect(screen.container.querySelector(".MuiSkeleton-root")).toBeNull();
 });
 
