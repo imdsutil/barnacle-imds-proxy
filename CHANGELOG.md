@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.0.0](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.8.1...v1.0.0) (2026-09-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* drive IMDS networks from user-configured IP list ([#42](https://github.com/imdsutil/barnacle-imds-proxy/issues/42))
+
+### Features
+
+* add gui-debug script for driving Docker Desktop in a nested X server ([#67](https://github.com/imdsutil/barnacle-imds-proxy/issues/67)) ([bd1e7ae](https://github.com/imdsutil/barnacle-imds-proxy/commit/bd1e7ae89ef0fddffcb6e7250997a344ab0b5229))
+* drive IMDS networks from user-configured IP list ([#42](https://github.com/imdsutil/barnacle-imds-proxy/issues/42)) ([f91849a](https://github.com/imdsutil/barnacle-imds-proxy/commit/f91849afdf1c5124b95c6e6a87c20ebc009dcb5c))
+* replace provider pills with per-IP network chips ([#49](https://github.com/imdsutil/barnacle-imds-proxy/issues/49)) ([f25e6c1](https://github.com/imdsutil/barnacle-imds-proxy/commit/f25e6c14fa753b390c6b14f29584d60686769e43))
+
+
+### Bug Fixes
+
+* **a11y:** give the expand toggle and add IP button valid ARIA ([#92](https://github.com/imdsutil/barnacle-imds-proxy/issues/92)) ([4a24db0](https://github.com/imdsutil/barnacle-imds-proxy/commit/4a24db0a449164e30f645752f7ddc7840e1748a9))
+* **ci:** suppress unfixed docker/docker govulncheck vulns, add gomod Dependabot ([#45](https://github.com/imdsutil/barnacle-imds-proxy/issues/45)) ([30f2c2c](https://github.com/imdsutil/barnacle-imds-proxy/commit/30f2c2c3ce7eebf0a1592cb1aaa4c51e4676fe0c))
+* implement the IMDS protocol in the AWS, Azure, Alibaba and Tencent recipes ([#89](https://github.com/imdsutil/barnacle-imds-proxy/issues/89)) ([4e1233b](https://github.com/imdsutil/barnacle-imds-proxy/commit/4e1233bebdc82db8178d54c63f1f3dd993246cbc))
+* make the GCP recipe speak the GCE metadata protocol ([#88](https://github.com/imdsutil/barnacle-imds-proxy/issues/88)) ([3d7d1b5](https://github.com/imdsutil/barnacle-imds-proxy/commit/3d7d1b59a716d1cf3955a0674c7d3a4e6d18a833))
+* never overwrite settings the user is editing ([#94](https://github.com/imdsutil/barnacle-imds-proxy/issues/94)) ([1a568e1](https://github.com/imdsutil/barnacle-imds-proxy/commit/1a568e1b98234eb6131a6c01ea9acb82e54cea60))
+* prune stale IP index entries and invalidate proxy cache on IP release ([#66](https://github.com/imdsutil/barnacle-imds-proxy/issues/66)) ([d54971a](https://github.com/imdsutil/barnacle-imds-proxy/commit/d54971ac37b0578efe00b450b8f0e854648cdaa8))
+* recover from lookups that race container IP indexing ([#87](https://github.com/imdsutil/barnacle-imds-proxy/issues/87)) ([013ba99](https://github.com/imdsutil/barnacle-imds-proxy/commit/013ba992941acd1d79142165b37d39a572b4b350))
+* replace defer with explicit close/cancel in notify retry loops ([#57](https://github.com/imdsutil/barnacle-imds-proxy/issues/57)) ([ea912f9](https://github.com/imdsutil/barnacle-imds-proxy/commit/ea912f9b87a227d2c101e91d337bf83d1ae0c9af))
+* report a stopped container's address as disconnected ([#97](https://github.com/imdsutil/barnacle-imds-proxy/issues/97)) ([d56a85e](https://github.com/imdsutil/barnacle-imds-proxy/commit/d56a85e255d47ee39b864dc2e1f34425680c9e25))
+* run startup network reconcile synchronously ([#51](https://github.com/imdsutil/barnacle-imds-proxy/issues/51)) ([5d662a3](https://github.com/imdsutil/barnacle-imds-proxy/commit/5d662a38ae3a8d8a4222f56d6a08dd59c96166fa))
+* survive malformed /containers payloads instead of blanking or looping ([#91](https://github.com/imdsutil/barnacle-imds-proxy/issues/91)) ([ac2d0a5](https://github.com/imdsutil/barnacle-imds-proxy/commit/ac2d0a5878241972b0909b22feb9741fee61d514))
+* unblock the CI security gate (otel + UI dependency advisories) ([#68](https://github.com/imdsutil/barnacle-imds-proxy/issues/68)) ([b7b0d69](https://github.com/imdsutil/barnacle-imds-proxy/commit/b7b0d694b2e6d1bbe499d50af951e6ee41cb7776))
+
+
+### Performance Improvements
+
+* O(1) container IP lookup via reverse IP index ([#53](https://github.com/imdsutil/barnacle-imds-proxy/issues/53)) ([63f6c17](https://github.com/imdsutil/barnacle-imds-proxy/commit/63f6c17452359d470a0e4064ba53cf6b3a62abe3))
+
 ## [0.8.1](https://github.com/imdsutil/barnacle-imds-proxy/compare/v0.8.0...v0.8.1) (2026-03-29)
 
 
