@@ -28,7 +28,7 @@ The controller uses the Docker socket to watch for container lifecycle events. W
 
 Pausing before connecting ensures the IMDS addresses are routable by the time the container's process starts. Without that order, a process that queries the IMDS endpoint at startup could get a connection refused before the network is ready.
 
-The controller also handles container stop and destroy events, and removes the container from its internal tracking.
+The controller also handles container destroy events, and removes the container from its internal tracking. A container that has stopped but not been removed stays tracked, so it keeps its row in the Containers tab. Its address shows as disconnected, because Docker drops the container's IP while keeping the network attached.
 
 ## Proxy
 

@@ -114,7 +114,7 @@ export function ContainersTable({
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            No labeled containers are running.
+            No labeled containers found.
           </Typography>
         </Box>
       );
