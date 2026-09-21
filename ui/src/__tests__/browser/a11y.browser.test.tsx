@@ -119,7 +119,7 @@ test(
     const screen = await renderApp(withRows());
     await expect.element(screen.getByText("alpha")).toBeVisible();
 
-    const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
+    const row = screen.container.querySelector("tbody tr:has(button[aria-expanded])") as HTMLElement;
     await tabUntilFocused(row, 12);
     expect(document.activeElement).toBe(row);
   },
@@ -128,19 +128,22 @@ test(
 
 // 4.10 and 4.11: Enter and Space both toggle the row.
 //
-// Both rows always render with an aria-expanded attribute (its value
-// toggles true/false; the row is never removed), so counting matched
+// The expand state lives on the row's toggle button, since a <tr> has the
+// implicit role "row", which does not support aria-expanded. The button
+// always renders and its value toggles true/false, so counting matched
 // elements can never change. Polling the attribute's own value is the
-// correct way to observe the toggle.
+// correct way to observe the toggle. The key still goes to the focused row,
+// which is the behaviour under test.
 test.each(["{Enter}", " "])("pressing %s on a focused row toggles it", async (key) => {
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
+  const row = screen.container.querySelector("tbody tr:has(button[aria-expanded])") as HTMLElement;
+  const toggle = row.querySelector("button[aria-expanded]") as HTMLElement;
   row.focus();
-  const before = row.getAttribute("aria-expanded");
+  const before = toggle.getAttribute("aria-expanded");
   await userEvent.keyboard(key);
-  await expect.poll(() => row.getAttribute("aria-expanded")).not.toBe(before);
+  await expect.poll(() => toggle.getAttribute("aria-expanded")).not.toBe(before);
 });
 
 // 4.13, 4.14, 4.15: the per-row controls are focusable and Enter-activated.
@@ -155,7 +158,7 @@ test(
     const screen = await renderApp(withRows());
     await expect.element(screen.getByText("alpha")).toBeVisible();
 
-    const row = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
+    const row = screen.container.querySelector("tbody tr:has(button[aria-expanded])") as HTMLElement;
     await tabUntilFocused(row, 12);
     expect(document.activeElement).toBe(row);
 
@@ -189,7 +192,7 @@ test("tabbing moves forward out of a row and shift-tab moves back", async () => 
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
 
-  const first = screen.container.querySelector("tbody tr[aria-expanded]") as HTMLElement;
+  const first = screen.container.querySelector("tbody tr:has(button[aria-expanded])") as HTMLElement;
   first.focus();
   const start = document.activeElement;
 
@@ -225,7 +228,7 @@ const sortableRows = () =>
   });
 
 function firstRowName(screen: Screen) {
-  return screen.container.querySelector("tbody tr[aria-expanded] td")?.textContent;
+  return screen.container.querySelector("tbody tr:has(button[aria-expanded]) td")?.textContent;
 }
 
 // 6.5 and 6.6: Tab reaches the Name column header, and it takes visible
@@ -492,50 +495,32 @@ async function auditFor(node: HTMLElement) {
   return results.violations.map((v) => `${v.id}: ${v.help} (${v.nodes.length} nodes)`);
 }
 
-// Pre-existing bug: ContainersTable.tsx puts aria-expanded on the <tr>
-// element (role "row"), which does not support that attribute per the
-// ARIA spec. axe flags it as
-// "aria-conditional-attr: ARIA attributes must be used as specified for
-// the element's role (2 nodes)", one node per rendered container row.
-// Not a test bug: confirmed by running the audit against real rendered
-// rows and reading the violation's target selectors, both pointing at the
-// two <tr aria-expanded="..."> rows. Fixing it means changing
-// ContainersTable.tsx, which is out of scope for this task.
-//
-// Whoever fixes this will also need to update the "tbody tr[aria-expanded]"
-// selector used in this file (the 4.9, 4.10/4.11, 4.13-4.15 and 4.16/4.17
-// tests above) and in containers.browser.test.tsx:55, since both rely on
-// aria-expanded staying on the <tr>.
-//
 // Note: the WCAG A/AA tags include color-contrast, and this harness seeds
 // window.__ddMuiV6Themes with empty theme objects, so MUI falls back to its
 // own default palette here rather than Docker Desktop's real one. A "no
 // violations" result from this audit is only a claim about MUI's defaults,
 // not the colors a user actually sees.
 //
-// Tracked as issue #70. Remove .skip in the PR that fixes it.
-test.skip("the containers tab has no WCAG A or AA violations", async () => {
+test("the containers tab has no WCAG A or AA violations", async () => {
   const screen = await renderApp(withRows());
   await expect.element(screen.getByText("alpha")).toBeVisible();
   expect(await auditFor(screen.container as HTMLElement)).toEqual([]);
 });
 
-// Pre-existing bug: SettingsForm.tsx's "add IP address" IconButton
-// (onClick={handleAddIP}, wrapping only an AddIcon) has no aria-label and
-// no visible text, so it has no accessible name. axe flags it as
-// "button-name: Buttons must have discernible text (1 nodes)", pointing at
-// that one button. Fixing it means changing SettingsForm.tsx, which is out
-// of scope for this task.
-//
 // Note: the WCAG A/AA tags include color-contrast, and this harness seeds
 // window.__ddMuiV6Themes with empty theme objects, so MUI falls back to its
 // own default palette here rather than Docker Desktop's real one. A "no
 // violations" result from this audit is only a claim about MUI's defaults,
 // not the colors a user actually sees.
 //
-// Tracked as issue #71. Remove .skip in the PR that fixes it.
-test.skip("the settings tab has no WCAG A or AA violations", async () => {
-  const screen = await renderApp(createFakeDdClient());
+test("the settings tab has no WCAG A or AA violations", async () => {
+  // Seed configured IPs so the audit covers the chips and their delete
+  // controls. With the default empty list no chip renders at all.
+  const screen = await renderApp(
+    createFakeDdClient({
+      settings: { url: "http://localhost:8080", customIPs: ["169.254.169.254", "fd00:ec2::254"] },
+    }),
+  );
   await userEvent.click(screen.getByRole("tab", { name: /settings/i }));
   await expect.element(screen.getByLabelText(/imds server url/i)).toBeVisible();
   expect(await auditFor(screen.container as HTMLElement)).toEqual([]);

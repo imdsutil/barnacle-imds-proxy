@@ -274,10 +274,10 @@ describe('SettingsForm', () => {
     });
     render(<SettingsForm ddClient={createMockDockerDesktopClient() as any} service={service} showSnackbar={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByLabelText(/IP address/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /IP address/i })).toBeDefined());
 
-    fireEvent.change(screen.getByLabelText(/IP address/i), { target: { value: '169.254.169.254' } });
-    fireEvent.click(screen.getByRole('button', { name: '' })); // AddIcon button
+    fireEvent.change(screen.getByRole('textbox', { name: /IP address/i }), { target: { value: '169.254.169.254' } });
+    fireEvent.click(screen.getByRole('button', { name: /add ip address/i }));
 
     await waitFor(() => expect(screen.getByText('169.254.169.254')).toBeTruthy());
   });
@@ -288,10 +288,10 @@ describe('SettingsForm', () => {
     });
     render(<SettingsForm ddClient={createMockDockerDesktopClient() as any} service={service} showSnackbar={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByLabelText(/IP address/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /IP address/i })).toBeDefined());
 
-    fireEvent.change(screen.getByLabelText(/IP address/i), { target: { value: 'not-an-ip' } });
-    fireEvent.click(screen.getByRole('button', { name: '' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /IP address/i }), { target: { value: 'not-an-ip' } });
+    fireEvent.click(screen.getByRole('button', { name: /add ip address/i }));
 
     await waitFor(() => expect(screen.getByText('Enter a valid IPv4 or IPv6 address')).toBeTruthy());
   });
@@ -302,10 +302,10 @@ describe('SettingsForm', () => {
     });
     render(<SettingsForm ddClient={createMockDockerDesktopClient() as any} service={service} showSnackbar={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByLabelText(/IP address/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /IP address/i })).toBeDefined());
 
-    fireEvent.change(screen.getByLabelText(/IP address/i), { target: { value: '169.254.169.254' } });
-    fireEvent.click(screen.getByRole('button', { name: '' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /IP address/i }), { target: { value: '169.254.169.254' } });
+    fireEvent.click(screen.getByRole('button', { name: /add ip address/i }));
 
     await waitFor(() => expect(screen.getByText('Address already added')).toBeTruthy());
   });
