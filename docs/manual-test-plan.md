@@ -80,8 +80,8 @@ configured IP in Settings.
 | 10 | Enter a URL, click Save, reopen the tab | Setting saved and reloaded correctly |
 | 11 | Save a URL, switch to the Containers tab, switch back | The saved URL is still shown |
 | 12 | With the Settings tab open, run the external settings-update command from Prerequisites | URL field updates within about 5 seconds, with no skeleton flicker |
-| 13 | Edit the URL field without saving, then run the external settings-update command | The unsaved edit is not overwritten. **Currently fails, see issue #77** |
-| 14 | Stop the controller with `docker stop imds-proxy-controller`, then edit the URL field | Field reverts to the last saved value after a few seconds. **Currently fails, see issue #77** |
+| 13 | Edit the URL field without saving, then run the external settings-update command | The unsaved edit is not overwritten. Covered by `settings.browser.test.tsx` |
+| 14 | Stop the controller with `docker stop imds-proxy-controller`, then edit the URL field | Field keeps what you typed. Saving shows an error toast and still does not change the text. Covered by `proxyState.browser.test.tsx` |
 
 Restart the controller when done:
 

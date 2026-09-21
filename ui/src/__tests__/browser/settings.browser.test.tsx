@@ -72,7 +72,7 @@ test("an invalid URL is rejected rather than saved", async () => {
 // To reproduce deterministically we let the 5s poll fire while the field is
 // still clean (so its dirty check passes), then hold its /settings response
 // in flight while the user types, then let it resolve.
-test.skip("a settings poll does not overwrite text being typed", async () => {
+test("a settings poll does not overwrite text being typed", async () => {
   const fake = createFakeDdClient({ settings: { url: "", customIPs: [] } });
   const screen = await renderApp(fake);
   await openSettings(screen);
@@ -109,3 +109,38 @@ test.skip("a settings poll does not overwrite text being typed", async () => {
 
   await expect.element(field).toHaveValue("http://localhost:9000");
 }, 15000);
+
+// Issue #77, third defect: the poll used to compare customIPs unsorted while
+// the Save button compared them sorted, so removing an IP and adding it back
+// left the two disagreeing. The Save button called the form clean and stayed
+// disabled while the poll called it dirty and stopped refreshing forever,
+// leaving the tab stuck on stale data with no way to force a reload. Both
+// now use one definition of dirty, in which IP order is not a change.
+test("reordering the IP list does not freeze the settings poll", async () => {
+  const fake = createFakeDdClient({
+    settings: { url: "http://saved.example:8080", customIPs: ["10.0.0.1", "10.0.0.2"] },
+  });
+  const screen = await renderApp(fake);
+  await openSettings(screen);
+
+  const field = screen.getByLabelText("IMDS server URL");
+  await expect.element(field).toHaveValue("http://saved.example:8080");
+
+  // Remove the first IP and add it back, so the set is unchanged but the
+  // order is not.
+  const removeFirst = screen.container.querySelector(
+    '[data-testid="CancelIcon"]',
+  ) as HTMLElement;
+  await userEvent.click(removeFirst);
+  await userEvent.fill(screen.getByRole("textbox", { name: "IP address" }), "10.0.0.1");
+  await userEvent.click(screen.getByRole("button", { name: /add ip address/i }));
+
+  // Same set in a different order is not an unsaved change.
+  await expect
+    .element(screen.getByRole("button", { name: /save settings/i }))
+    .toBeDisabled();
+
+  // The poll must still be running: an external change has to land.
+  fake.setSettings({ url: "http://changed.example:9000", customIPs: ["10.0.0.1", "10.0.0.2"] });
+  await expect.element(field, { timeout: 9000 }).toHaveValue("http://changed.example:9000");
+}, 20000);

@@ -73,21 +73,13 @@ test(
   8000
 );
 
-// Skipped: SettingsForm.tsx's poll guard (component line 118,
-// `if (isMountedRef.current && urlClean && ipsClean)`) only reloads
-// settings from the backend when the field has NO unsaved edits. Editing
-// the URL field makes urlClean false, so the 5-second poll skips reloading
-// forever and the field keeps the user's typed value indefinitely; it never
-// reverts to the last saved value. Confirmed empirically with a throwaway
-// probe test (since removed): after editing the field and waiting 6.5
-// real seconds (longer than the poll's 5000ms interval), the field still
-// held the edited value, not the saved one. Not a test bug: this is the
-// same poll interval SettingsForm already runs regardless of
-// proxyUnreachable. Tracked as issue #77, which combines this with the
-// opposite failure of the same dirty-check block. Remove .skip in the PR
-// that fixes #77.
-test.skip(
-  "editing the URL field while the backend is unreachable reverts to the saved value",
+// An edit the user cannot save must survive. The settings poll runs every
+// 5 seconds regardless of proxyUnreachable, so this waits longer than one
+// interval and asserts the typed value is still there. Reverting it would
+// discard input the user never agreed to lose, which is the same defect as
+// the poll overwriting keystrokes mid-type. See #77.
+test(
+  "editing the URL field while the backend is unreachable keeps what you typed",
   async () => {
     const fake = createFakeDdClient({ settings: { url: "http://saved.example:8080", customIPs: [] } });
     fake.failAlways("/containers", 500);
@@ -105,7 +97,9 @@ test.skip(
     await userEvent.keyboard("XYZ");
     await expect.element(field).toHaveValue("http://saved.example:8080XYZ");
 
-    await expect.element(field, { timeout: 7000 }).toHaveValue("http://saved.example:8080");
+    // Longer than the 5000ms poll interval, so a poll has certainly run.
+    await new Promise((r) => setTimeout(r, 6500));
+    await expect.element(field).toHaveValue("http://saved.example:8080XYZ");
   },
   10000
 );

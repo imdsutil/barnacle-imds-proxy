@@ -61,6 +61,28 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
   const customIPsRef = useRef(customIPs);
   const savedCustomIPsRef = useRef(savedCustomIPs);
 
+  // Bumped per load so a slow response cannot overwrite a newer one
+  const loadGenerationRef = useRef(0);
+
+  // One definition of "dirty". The poll reads it from refs, the Save button
+  // from state. IP order is not a change, so both sides compare sorted.
+  const settingsDiffer = (
+    a: string,
+    b: string,
+    aIPs: string[],
+    bIPs: string[],
+  ) =>
+    a !== b ||
+    JSON.stringify(aIPs.slice().sort()) !== JSON.stringify(bIPs.slice().sort());
+
+  const hasPendingEdits = () =>
+    settingsDiffer(
+      urlRef.current,
+      savedUrlRef.current,
+      customIPsRef.current,
+      savedCustomIPsRef.current,
+    );
+
   // Keep refs in sync so polling callbacks can read current values without stale closures
   useEffect(() => { urlRef.current = url; }, [url]);
   useEffect(() => { savedUrlRef.current = savedUrl; }, [savedUrl]);
@@ -75,17 +97,25 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
     // Load saved settings from backend
     const loadSettings = async (showSkeleton = true) => {
+      const generation = (loadGenerationRef.current += 1);
       if (showSkeleton) setIsLoadingSettings(true);
+
+      // Never replace what the user typed. Re-checked after the await, since
+      // the form can become dirty while the request is in flight, and the
+      // generation guard drops a slow response a newer load has superseded.
+      const canApply = () =>
+        isMountedRef.current && generation === loadGenerationRef.current && !hasPendingEdits();
+
       try {
         const result = await withTimeout(service.getSettings(), BACKEND_REQUEST_TIMEOUT_MS);
         if (isSettingsResponse(result)) {
           const settings = result;
-          const url = settings.url || '';
+          const loadedUrl = settings.url || '';
           const ips = settings.customIPs || [];
 
-          if (isMountedRef.current) {
-            setUrl(url);
-            setSavedUrl(url);
+          if (canApply()) {
+            setUrl(loadedUrl);
+            setSavedUrl(loadedUrl);
             setCustomIPs(ips);
             setSavedCustomIPs(ips);
           }
@@ -94,13 +124,13 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
         }
       } catch (error) {
         // Silently fall back to localStorage if the backend is unavailable.
-        const savedUrl = localStorage.getItem('url') || '';
-        const savedIps = JSON.parse(localStorage.getItem('customIPs') || '[]');
-        if (isMountedRef.current) {
-          setUrl(savedUrl);
-          setSavedUrl(savedUrl);
-          setCustomIPs(savedIps);
-          setSavedCustomIPs(savedIps);
+        const storedUrl = localStorage.getItem('url') || '';
+        const storedIps = JSON.parse(localStorage.getItem('customIPs') || '[]');
+        if (canApply()) {
+          setUrl(storedUrl);
+          setSavedUrl(storedUrl);
+          setCustomIPs(storedIps);
+          setSavedCustomIPs(storedIps);
         }
       } finally {
         if (showSkeleton && isMountedRef.current) {
@@ -111,11 +141,10 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
 
     loadSettings();
 
-    // Poll for external settings changes, but skip if the user has unsaved edits
+    // Poll for external settings changes. Skipping while the user has edits
+    // avoids a pointless request; loadSettings checks again before applying.
     const pollInterval = setInterval(() => {
-      const urlClean = urlRef.current === savedUrlRef.current;
-      const ipsClean = JSON.stringify(customIPsRef.current) === JSON.stringify(savedCustomIPsRef.current);
-      if (isMountedRef.current && urlClean && ipsClean) {
+      if (isMountedRef.current && !hasPendingEdits()) {
         loadSettings(false);
       }
     }, 5000);
@@ -126,11 +155,7 @@ export function SettingsForm({ ddClient, service, showSnackbar, proxyUnreachable
     };
   }, [ddClient, service, showSnackbar]);
 
-  const hasUnsavedChanges = () => {
-    if (url !== savedUrl) return true;
-    if (JSON.stringify(customIPs.slice().sort()) !== JSON.stringify(savedCustomIPs.slice().sort())) return true;
-    return false;
-  };
+  const hasUnsavedChanges = () => settingsDiffer(url, savedUrl, customIPs, savedCustomIPs);
 
   const handleAddIP = () => {
     const trimmed = newIP.trim();
